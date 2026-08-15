@@ -25,7 +25,7 @@
 //!   the reader most likely to believe a fabricated one.
 
 use crate::analysis::offset_to_position;
-use crate::ast::{Diag, Note, NO_FILE};
+use crate::ast::{note_kind_name, Diag, Note, NO_FILE};
 use serde_json::{json, Value};
 
 /// The parse-only arena, as `--dump-ast --emit-json` emits it.
@@ -113,7 +113,11 @@ fn explanations_of(diag_idx: i64, notes: &[Note], files: &[(String, String)]) ->
         match notes.get(note_idx) {
             Some(note) => {
                 if note.0 == diag_idx {
+                    // `kind` is the stage's own classification and is what a
+                    // tool branches on; `message` is prose for a reader and
+                    // may be reworded without breaking anything.
                     explanations.push(json!({
+                        "kind": note_kind_name(note.5),
                         "message": note.1,
                         "source": source_json(files, note.2, note.3, note.4)
                     }));

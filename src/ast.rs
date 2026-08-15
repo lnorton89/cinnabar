@@ -39,20 +39,52 @@ pub type Diag = (String, i64, i64, i64);
 
 // A secondary explanatory note attached to a primary diagnostic:
 // (index of the diagnostic in the errors vec at attach time, message,
-// file, start, end).  Notes carry real source spans of facts the checker
-// already computed (a binding site, a path's last move, a branch exit) —
-// never fabricated locations.  Rendering is the consumer's choice: the CLI
-// shows them as secondary labels under --explain-borrow, the language
-// server as related information.
-pub type Note = (i64, String, i64, i64, i64);
+// file, start, end, kind).  Notes carry real source spans of facts the
+// checker already computed (a binding site, a path's last move, a branch
+// exit) — never fabricated locations.  Rendering is the consumer's choice:
+// the CLI shows them as secondary labels under --explain-borrow, the
+// language server as related information.
+pub type Note = (i64, String, i64, i64, i64, i64);
+
+// What role a note plays in the explanation, assigned by the stage that
+// raised it.  The message is prose meant for a reader and is free to be
+// reworded; the kind is what a tool may branch on, so an editor drawing a
+// value's path through a function does not have to recognize the checker's
+// sentences to know which span is the binding and which is a consuming
+// branch.  A note whose role is not one of these is NOTE_CONTEXT: it
+// supports the diagnostic without making a claim about a linear value's
+// flow.
+pub const NOTE_CONTEXT: i64 = 0;
+pub const NOTE_BINDING: i64 = 1; // where the value under discussion was bound
+pub const NOTE_CONSUMED: i64 = 2; // a path along which it is consumed
+pub const NOTE_LIVE: i64 = 3; // a path along which it is still live
+pub const NOTE_MOVED: i64 = 4; // a site that already moved it
+pub const NOTE_GUIDANCE: i64 = 5; // what to do about it, at the site to do it
+
+/// The symbolic name of a note kind, for the surfaces that report one.
+pub fn note_kind_name(kind: i64) -> &'static str {
+    if kind == NOTE_BINDING {
+        "binding"
+    } else if kind == NOTE_CONSUMED {
+        "consumed"
+    } else if kind == NOTE_LIVE {
+        "live"
+    } else if kind == NOTE_MOVED {
+        "moved"
+    } else if kind == NOTE_GUIDANCE {
+        "guidance"
+    } else {
+        "context"
+    }
+}
 
 // Attach a note to the most recently pushed diagnostic.  A note with no
 // diagnostic to explain is dropped rather than invented.
-pub fn push_note_for_last(errors: &[Diag], notes: &mut Vec<Note>, message: &str, file: i64, start: i64, end: i64) {
+pub fn push_note_for_last(errors: &[Diag], notes: &mut Vec<Note>, message: &str, file: i64, start: i64, end: i64, kind: i64) {
     if errors.is_empty() {
         return;
     }
-    notes.push((errors.len() as i64 - 1, message.to_string(), file, start, end));
+    notes.push((errors.len() as i64 - 1, message.to_string(), file, start, end, kind));
 }
 
 pub const NONE: i64 = -1;

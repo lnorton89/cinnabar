@@ -39,8 +39,36 @@ Palette:
 - **Cinnabar: Show Output Channel** — opens the same output channel as clicking the status bar
   item.
 
-Borrow-checker explanations also appear as code lenses above the line they annotate; clicking one
-shows the full explanation.
+## Borrow explanations
+
+Borrow-checker explanations appear as code lenses above the line they annotate. Clicking one opens
+a panel beside the editor that draws the explanation as a diagram rather than stacking it as text:
+the binding site at the top, the branches that disagree about the value as parallel lanes below it,
+and the guidance last. Every node is clickable and reveals its span in the editor.
+
+The shape is the point. A linear-type rejection is a claim about a value's path through a
+function — bound here, consumed on this route, still live on that one — and a stack of secondary
+labels makes the reader reassemble that shape in their head. `cinnabar-lsp` sends the whole
+explanation with each lens, so the panel needs no second request to draw it.
+
+Each node is classified by the `kind` the borrow checker attached to its note (`binding`,
+`consumed`, `live`, `moved`, `guidance`, `context`), never by matching the wording of a message.
+Messages are prose and may be reworded; the kinds are the checker's own vocabulary, so rewording a
+diagnostic cannot silently change what the diagram claims.
+
+## Tasks
+
+The extension contributes `cinnabar` tasks for every project in the workspace — `build`, `run`,
+`check`, `test`, and `test (update snapshots)` — discoverable from **Terminal → Run Task…**. A
+project is a directory with a `build.cnb`, found by walking upward from each workspace folder, so a
+workspace opened on a subdirectory still gets its tasks and a folder with no manifest anywhere
+above it gets none rather than tasks that would fail on invocation. Two folders inside one project
+contribute one set of tasks, not two.
+
+`cinnabar.compiler.path` selects the executable those tasks invoke (default: `cinnabar` from
+`PATH`). No task declares a problem matcher: the language server already publishes the compiler's
+diagnostics with real spans, and a matcher scraping the same errors out of terminal text would
+double every one of them in the Problems panel.
 
 ## Snippets
 

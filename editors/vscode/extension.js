@@ -1,9 +1,21 @@
+const fs = require("node:fs");
 const vscode = require("vscode");
 const languageClient = require("vscode-languageclient/node");
 const { createLaunchPlan } = require("./lsp-launcher");
+const { createTaskSpecs } = require("./tasks");
+const { renderExplanationHtml } = require("./explanation");
+
+const TASK_TYPE = "cinnabar";
 
 let client;
 let statusBarItem;
+let explanationPanel;
+// The explanations the open panel is currently showing. The panel is reused
+// across code lenses, so its message handler is registered once at creation
+// and reads this; registering a fresh handler per explanation would leave
+// the previous ones attached and reveal a stale span on every click after
+// the first.
+let explanationNodes = [];
 
 // vscode-languageclient's State enum (Stopped = 1, Starting = 3, Running = 5)
 // isn't re-exported through a require() we can destructure cleanly here, so
@@ -97,6 +109,92 @@ function showOutputChannel() {
   client.outputChannel.show();
 }
 
+// One panel, reused. A borrow explanation is something you read while
+// editing the code it is about, and a new tab per code lens would bury the
+// editor the reader is trying to get back to.
+function showExplanation(explanation) {
+  if (typeof explanation === "string") {
+    // A checkout whose language server predates structured explanations
+    // still sends the bare sentence. Showing it is better than showing
+    // nothing, and it costs one branch.
+    vscode.window.showInformationMessage(explanation);
+    return;
+  }
+  if (!explanation || typeof explanation !== "object") {
+    return;
+  }
+  if (!explanationPanel) {
+    explanationPanel = vscode.window.createWebviewPanel(
+      "cinnabar.explanation",
+      "Cinnabar: Borrow Explanation",
+      { viewColumn: vscode.ViewColumn.Beside, preserveFocus: true },
+      { enableScripts: true, retainContextWhenHidden: true }
+    );
+    explanationPanel.webview.onDidReceiveMessage((message) => {
+      if (!message || message.type !== "reveal") {
+        return;
+      }
+      const target = explanationNodes[message.index];
+      if (!target || !target.location) {
+        return;
+      }
+      revealLocation(target.location);
+    });
+    explanationPanel.onDidDispose(() => {
+      explanationPanel = undefined;
+      explanationNodes = [];
+    });
+  }
+  explanationNodes = Array.isArray(explanation.explanations) ? explanation.explanations : [];
+  const nonce = createNonce();
+  explanationPanel.webview.html = renderExplanationHtml(explanation, nonce);
+  explanationPanel.reveal(vscode.ViewColumn.Beside, true);
+}
+
+function revealLocation(location) {
+  const range = location.range || {};
+  const start = range.start || { line: 0, character: 0 };
+  const end = range.end || start;
+  const selection = new vscode.Range(start.line, start.character, end.line, end.character);
+  vscode.window.showTextDocument(vscode.Uri.parse(location.uri), {
+    selection,
+    viewColumn: vscode.ViewColumn.One
+  });
+}
+
+function createNonce() {
+  const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+  let nonce = "";
+  for (let index = 0; index < 32; index += 1) {
+    nonce += alphabet.charAt(Math.floor(Math.random() * alphabet.length));
+  }
+  return nonce;
+}
+
+// Tasks are resolved fresh on every request rather than cached: a manifest
+// can appear in a folder while the window is open, and a picker that still
+// showed yesterday's project list would be wrong in exactly the case a new
+// contributor hits first.
+function provideTasks() {
+  const configuration = vscode.workspace.getConfiguration("cinnabar");
+  const specs = createTaskSpecs({
+    workspaceFolders: (vscode.workspace.workspaceFolders || []).map((folder) => folder.uri.fsPath),
+    executable: configuration.get("compiler.path", "cinnabar"),
+    pathExists: fs.existsSync
+  });
+  return specs.map((spec) => {
+    const task = new vscode.Task(
+      { type: TASK_TYPE, command: spec.name },
+      vscode.TaskScope.Workspace,
+      spec.name,
+      "cinnabar",
+      new vscode.ShellExecution(spec.commandLine, { cwd: spec.cwd })
+    );
+    task.detail = spec.detail;
+    return task;
+  });
+}
+
 function activate(context) {
   statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 0);
   statusBarItem.command = "cinnabar.showOutputChannel";
@@ -105,11 +203,16 @@ function activate(context) {
   context.subscriptions.push(statusBarItem);
 
   context.subscriptions.push(
-    vscode.commands.registerCommand("cinnabar.showExplanation", (explanation) => {
-      vscode.window.showInformationMessage(explanation);
-    }),
+    vscode.commands.registerCommand("cinnabar.showExplanation", showExplanation),
     vscode.commands.registerCommand("cinnabar.restartServer", restartServer),
-    vscode.commands.registerCommand("cinnabar.showOutputChannel", showOutputChannel)
+    vscode.commands.registerCommand("cinnabar.showOutputChannel", showOutputChannel),
+    vscode.tasks.registerTaskProvider(TASK_TYPE, {
+      provideTasks,
+      // Every task this provider offers is fully resolved when it is
+      // offered, so a task read back from tasks.json needs nothing filled
+      // in and is returned unchanged.
+      resolveTask: (task) => task
+    })
   );
 
   startClient();

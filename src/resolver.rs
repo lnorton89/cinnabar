@@ -639,6 +639,7 @@ fn insert_decl(state: &mut State, scope: i64, name: i64, sym: i64, ns: i64, casi
             node_file(state.1, existing_decl),
             node_start(state.1, existing_decl),
             node_end(state.1, existing_decl),
+            NOTE_CONTEXT,
         );
     }
     0
@@ -830,6 +831,7 @@ fn insert_hoisted(state: &mut State, scope: i64, name: i64, sym: i64, decl: i64)
             node_file(state.1, existing_decl),
             node_start(state.1, existing_decl),
             node_end(state.1, existing_decl),
+            NOTE_CONTEXT,
         );
     }
 }
@@ -2144,7 +2146,7 @@ fn suggest_type_name(state: &mut State, scope: i64, misspelled: i64) {
         idx += 1;
     }
     if let Some(suggestion) = suggest::suggest(&text, &candidates) {
-        push_note_for_last(state.3, state.10, &suggestion.message, suggestion.file, suggestion.start, suggestion.end);
+        push_note_for_last(state.3, state.10, &suggestion.message, suggestion.file, suggestion.start, suggestion.end, NOTE_GUIDANCE);
     }
 }
 

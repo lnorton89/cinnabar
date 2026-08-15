@@ -31,8 +31,8 @@ use cinnabar::analysis::{
     SymbolInfo, COMPLETE_FIELD, COMPLETE_KEYWORD, COMPLETE_LOCAL, SEMANTIC_TOKEN_TYPES,
 };
 use cinnabar::ast::{
-    NO_FILE, SYM_CONST, SYM_ENUM, SYM_FUN, SYM_IMPL_METHOD, SYM_MODULE, SYM_NATIVE_FUN,
-    SYM_STRUCT, SYM_TRAIT, SYM_TRAIT_METHOD, SYM_TYPE, SYM_VARIANT,
+    note_kind_name, NO_FILE, SYM_CONST, SYM_ENUM, SYM_FUN, SYM_IMPL_METHOD, SYM_MODULE,
+    SYM_NATIVE_FUN, SYM_STRUCT, SYM_TRAIT, SYM_TRAIT_METHOD, SYM_TYPE, SYM_VARIANT,
 };
 use cinnabar::format::format_source;
 use cinnabar::project;
@@ -609,12 +609,18 @@ fn on_code_lens(state: &ServerState, params: &Value) -> Value {
         match analysis.notes.get(idx) {
             Some(note) => {
                 if note.2 == file {
+                    // The lens carries the whole explanation its note belongs
+                    // to, not just its own sentence: an editor that wants to
+                    // draw a value's path through the function needs the
+                    // binding, the consuming branches and the live ones
+                    // together, and asking for them again would be a second
+                    // round trip for facts this analysis already holds.
                     lenses.push(json!({
                         "range": range_json(analysis, note.2, note.3, note.4),
                         "command": {
                             "title": note.1,
                             "command": "cinnabar.showExplanation",
-                            "arguments": [note.1]
+                            "arguments": [explanation_json(analysis, note.0, idx)]
                         }
                     }));
                 }
@@ -624,6 +630,48 @@ fn on_code_lens(state: &ServerState, params: &Value) -> Value {
         idx += 1;
     }
     Value::Array(lenses)
+}
+
+// One diagnostic and every note attached to it, in the order the checker
+// raised them, with `focus` naming the note whose lens was clicked.  Each
+// note reports the stage's own `kind` alongside its prose, so a consumer
+// classifies a span by what the borrow checker called it rather than by
+// recognizing the wording of a sentence that is free to change.
+fn explanation_json(analysis: &Analysis, diag_idx: i64, focus_note: usize) -> Value {
+    let diagnostic = match analysis.errors.get(diag_idx as usize) {
+        Some(error) => json!({
+            "message": error.0,
+            "location": location_json(analysis, error.1, error.2, error.3)
+        }),
+        None => Value::Null,
+    };
+    let mut explanations: Vec<Value> = Vec::new();
+    let mut focus = NONE_ID;
+    let mut idx = 0usize;
+    while idx < analysis.notes.len() {
+        match analysis.notes.get(idx) {
+            Some(note) => {
+                if note.0 == diag_idx {
+                    if idx == focus_note {
+                        focus = explanations.len() as i64;
+                    }
+                    explanations.push(json!({
+                        "kind": note_kind_name(note.5),
+                        "message": note.1,
+                        "location": location_json(analysis, note.2, note.3, note.4)
+                    }));
+                }
+            }
+            None => break,
+        }
+        idx += 1;
+    }
+    json!({
+        "format": "cinnabar.explanation.v1",
+        "diagnostic": diagnostic,
+        "explanations": explanations,
+        "focus": focus
+    })
 }
 
 // The (path, analysis, file id) behind a file-scoped (non-positional)

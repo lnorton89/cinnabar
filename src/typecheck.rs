@@ -2035,6 +2035,7 @@ fn check_stmt(state: &mut State, stmt: i64, ret: i64, impure: i64, self_key: i64
                     node_file(state.1, declared),
                     node_start(state.1, declared),
                     node_end(state.1, declared),
+                    NOTE_CONTEXT,
                 );
             }
             dkey
@@ -2062,6 +2063,7 @@ fn check_stmt(state: &mut State, stmt: i64, ret: i64, impure: i64, self_key: i64
                     node_file(state.1, declared_ty),
                     node_start(state.1, declared_ty),
                     node_end(state.1, declared_ty),
+                    NOTE_CONTEXT,
                 );
             }
         }
@@ -2120,6 +2122,7 @@ fn check_stmt(state: &mut State, stmt: i64, ret: i64, impure: i64, self_key: i64
                         node_file(state.1, state.17),
                         node_start(state.1, state.17),
                         node_end(state.1, state.17),
+                        NOTE_CONTEXT,
                     );
                 }
             }
@@ -2149,6 +2152,7 @@ fn check_stmt(state: &mut State, stmt: i64, ret: i64, impure: i64, self_key: i64
                 node_file(state.1, origin),
                 node_start(state.1, origin),
                 node_end(state.1, origin),
+                NOTE_CONTEXT,
             );
         }
     } else if is_option_key(state.1, key) {
@@ -2162,6 +2166,7 @@ fn check_stmt(state: &mut State, stmt: i64, ret: i64, impure: i64, self_key: i64
                 node_file(state.1, origin),
                 node_start(state.1, origin),
                 node_end(state.1, origin),
+                NOTE_CONTEXT,
             );
         }
     }
@@ -2302,7 +2307,7 @@ fn suggest_value_name(state: &mut State, source: i64, misspelled: i64) {
         idx += 1;
     }
     if let Some(suggestion) = suggest::suggest(&text, &candidates) {
-        push_note_for_last(state.3, state.16, &suggestion.message, suggestion.file, suggestion.start, suggestion.end);
+        push_note_for_last(state.3, state.16, &suggestion.message, suggestion.file, suggestion.start, suggestion.end, NOTE_GUIDANCE);
     }
 }
 
@@ -2349,6 +2354,7 @@ fn collect_const_item(state: &mut State, item: i64) {
             node_file(state.1, decl_ty),
             node_start(state.1, decl_ty),
             node_end(state.1, decl_ty),
+            NOTE_CONTEXT,
         );
     }
     alloc_node(state.1, &[NODE_CONSTVAL, NO_FILE, NO_FILE, NO_FILE, sym, value, NONE, NONE, NONE, NONE]);
@@ -3383,6 +3389,7 @@ fn check_assign_target(state: &mut State, target: i64, ret: i64, impure: i64, se
                         node_file(state.1, decl),
                         node_start(state.1, decl),
                         node_end(state.1, decl),
+                        NOTE_CONTEXT,
                     );
                 }
             }
@@ -3427,6 +3434,7 @@ fn check_assign_target(state: &mut State, target: i64, ret: i64, impure: i64, se
                         node_file(state.1, decl),
                         node_start(state.1, decl),
                         node_end(state.1, decl),
+                        NOTE_CONTEXT,
                     );
                 }
             }

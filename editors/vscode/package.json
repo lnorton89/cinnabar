@@ -1,7 +1,7 @@
 {
   "name": "cinnabar-language-support",
   "displayName": "Cinnabar Language Support",
-  "description": "Syntax highlighting and attached-facts language-server support for Cinnabar.",
+  "description": "Syntax highlighting, attached-facts language-server support, project tasks, and a borrow-explanation view for Cinnabar.",
   "version": "0.1.0",
   "publisher": "cinnabar-lang",
   "license": "Apache-2.0 WITH LLVM-exception",
@@ -9,13 +9,16 @@
     "vscode": "^1.91.0"
   },
   "categories": [
-    "Programming Languages"
+    "Programming Languages",
+    "Linters"
   ],
   "icon": "icon.png",
   "main": "./extension.js",
   "files": [
     "extension.js",
     "lsp-launcher.js",
+    "tasks.js",
+    "explanation.js",
     "language-configuration.json",
     "syntaxes",
     "snippets",
@@ -89,9 +92,35 @@
           "type": "string",
           "default": "",
           "description": "Path to the cinnabar-lsp executable used by auto mode when set, or required by path mode."
+        },
+        "cinnabar.compiler.path": {
+          "type": "string",
+          "default": "cinnabar",
+          "description": "The cinnabar executable the contributed build/run/check/test tasks invoke."
         }
       }
-    }
+    },
+    "taskDefinitions": [
+      {
+        "type": "cinnabar",
+        "required": [
+          "command"
+        ],
+        "properties": {
+          "command": {
+            "type": "string",
+            "description": "The Cinnabar project command this task runs.",
+            "enum": [
+              "build",
+              "run",
+              "check",
+              "test",
+              "test (update snapshots)"
+            ]
+          }
+        }
+      }
+    ]
   },
   "dependencies": {
     "vscode-languageclient": "^10.1.0"

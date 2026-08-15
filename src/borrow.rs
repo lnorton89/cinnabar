@@ -2600,6 +2600,7 @@ fn apply_assign(f: &F, state: &mut [i64], binding: i64, path: i64, report: bool,
                     bind_span.0,
                     bind_span.1,
                     bind_span.2,
+                    NOTE_GUIDANCE,
                 );
             }
         } else if eff == ST_PARTIAL {
@@ -3463,6 +3464,7 @@ fn explain_join(f: &F, ctx: &mut Ctx, exit_states: &[Vec<i64>], join_block: i64,
                     span.0,
                     span.1,
                     span.2,
+                    NOTE_CONSUMED,
                 );
             } else if st == ST_LIVE {
                 push_note_for_last(
@@ -3472,6 +3474,7 @@ fn explain_join(f: &F, ctx: &mut Ctx, exit_states: &[Vec<i64>], join_block: i64,
                     span.0,
                     span.1,
                     span.2,
+                    NOTE_LIVE,
                 );
             }
         }
@@ -3496,6 +3499,7 @@ fn explain_unconsumed(f: &F, ctx: &mut Ctx, binding: i64, name: &str, ty_key: i6
         bind_span.0,
         bind_span.1,
         bind_span.2,
+        NOTE_BINDING,
     );
 }
 
@@ -3626,6 +3630,7 @@ fn report(
                             moved_at.0,
                             moved_at.1,
                             moved_at.2,
+                            NOTE_MOVED,
                         );
                     }
                 } else if prev == ST_LIVE {
@@ -3680,6 +3685,7 @@ fn report(
                         bind_span.0,
                         bind_span.1,
                         bind_span.2,
+                        NOTE_GUIDANCE,
                     );
                 }
             }
