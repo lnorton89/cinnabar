@@ -38,6 +38,9 @@ pub const TYPED_AST_FORMAT: &str = "cinnabar.typed-ast.v1";
 /// The ABI layout report, as `--print-layout --emit-json` emits it.
 pub const LAYOUT_FORMAT: &str = "cinnabar.layout.v1";
 
+/// The published API documentation, as `cinnabar doc --emit-json` emits it.
+pub const DOCS_FORMAT: &str = "cinnabar.docs.v1";
+
 /// The diagnostic envelope. Every failing `--emit-json` invocation emits
 /// this document, whichever stage produced the diagnostics; a clean one
 /// emits it with an empty list.

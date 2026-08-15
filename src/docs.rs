@@ -1,8 +1,10 @@
-//! HTML rendering for the API documentation and the Cinnabook.
+//! The published API documentation, as a page and as a document.
 //!
 //! `render_api_docs` walks the parsed item lists and emits one article per
 //! public declaration, taking the prose from the `NODE_DOC` rows the parser
-//! attached to each item. `render_cinnabook` folds that output together
+//! attached to each item. `docs_json` walks the same lists and reports the
+//! same declarations as structured data, for a documentation site that
+//! would rather lay the page out itself than inherit the one below. `render_cinnabook` folds that output together
 //! with the manifesto into a single version-pinned page, and
 //! `serve_cinnabook` serves a rendered page over HTTP.
 //!
@@ -17,6 +19,8 @@
 //!   included — it is published as text, not as markup.
 
 use crate::ast::*;
+use crate::emit_json::DOCS_FORMAT;
+use serde_json::{json, Value};
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
 
@@ -24,6 +28,127 @@ pub fn render_api_docs(names: &[String], nodes: &[i64], lists: &[Vec<i64>], root
     let mut body = String::new();
     render_item_list(names, nodes, lists, root, 1, &mut body);
     page("Cinnabar API documentation", &body)
+}
+
+/// Every public declaration reachable from the entry, as one document.
+///
+/// The same walk the page above does, reported rather than laid out: the
+/// visibility test, the declaration kinds, and the attached prose are the
+/// ones `render_api_docs` uses, so a site built on this cannot publish a
+/// declaration the page would have hidden.
+pub fn docs_json(names: &[String], nodes: &[i64], lists: &[Vec<i64>], root: i64, files: &[(String, String)]) -> Value {
+    json!({
+        "format": DOCS_FORMAT,
+        "version": env!("CARGO_PKG_VERSION"),
+        "files": crate::emit_json::files_json(files),
+        "declarations": declarations_json(names, nodes, lists, root, files)
+    })
+}
+
+fn declarations_json(
+    names: &[String],
+    nodes: &[i64],
+    lists: &[Vec<i64>],
+    item_list: i64,
+    files: &[(String, String)],
+) -> Vec<Value> {
+    let mut out: Vec<Value> = Vec::new();
+    let mut idx = 0i64;
+    while idx < list_len(lists, item_list) {
+        let item = list_get(lists, item_list, idx);
+        // The same visibility test the page makes, read off the parsed item
+        // rather than decided again here.
+        if node_tag(nodes, item) == NODE_ITEM && node_b(nodes, item) == 1 {
+            out.push(declaration_json(names, nodes, lists, item, files));
+        }
+        idx += 1;
+    }
+    out
+}
+
+fn declaration_json(
+    names: &[String],
+    nodes: &[i64],
+    lists: &[Vec<i64>],
+    item: i64,
+    files: &[(String, String)],
+) -> Value {
+    let kind = node_a(nodes, item);
+    let (label, name) = item_label_and_name(names, nodes, item);
+    let mut entry = json!({
+        "kind": label,
+        "name": name,
+        "documentation": attached_docs(names, nodes, lists, item),
+        "source": crate::emit_json::source_json(files, node_file(nodes, item), node_start(nodes, item), node_end(nodes, item))
+    });
+    let members = if kind == ITEM_STRUCT {
+        members_json(names, nodes, lists, node_e(nodes, item), "Field", files)
+    } else if kind == ITEM_ENUM {
+        members_json(names, nodes, lists, node_e(nodes, item), "Variant", files)
+    } else if kind == ITEM_TRAIT {
+        methods_json(names, nodes, lists, node_e(nodes, item), files)
+    } else {
+        Vec::new()
+    };
+    if let Some(object) = entry.as_object_mut() {
+        if !members.is_empty() {
+            object.insert("members".to_string(), Value::Array(members));
+        }
+        if kind == ITEM_MODULE {
+            object.insert(
+                "declarations".to_string(),
+                Value::Array(declarations_json(names, nodes, lists, node_e(nodes, item), files)),
+            );
+        }
+    }
+    entry
+}
+
+fn members_json(
+    names: &[String],
+    nodes: &[i64],
+    lists: &[Vec<i64>],
+    members: i64,
+    label: &str,
+    files: &[(String, String)],
+) -> Vec<Value> {
+    let mut out: Vec<Value> = Vec::new();
+    let mut idx = 0i64;
+    while idx < list_len(lists, members) {
+        let member = list_get(lists, members, idx);
+        if node_c(nodes, member) == 1 {
+            out.push(json!({
+                "kind": label,
+                "name": name_text(names, node_a(nodes, member)),
+                "documentation": attached_docs(names, nodes, lists, member),
+                "source": crate::emit_json::source_json(files, node_file(nodes, member), node_start(nodes, member), node_end(nodes, member))
+            }));
+        }
+        idx += 1;
+    }
+    out
+}
+
+fn methods_json(
+    names: &[String],
+    nodes: &[i64],
+    lists: &[Vec<i64>],
+    methods: i64,
+    files: &[(String, String)],
+) -> Vec<Value> {
+    let mut out: Vec<Value> = Vec::new();
+    let mut idx = 0i64;
+    while idx < list_len(lists, methods) {
+        let method = list_get(lists, methods, idx);
+        out.push(json!({
+            "kind": "Method",
+            "name": name_text(names, node_a(nodes, method)),
+            "documentation": attached_docs(names, nodes, lists, method),
+            "source": crate::emit_json::source_json(files, node_file(nodes, method), node_start(nodes, method), node_end(nodes, method))
+        }));
+        idx += 1;
+    }
+    out
 }
 
 pub fn render_cinnabook(api_html: &str) -> String {
@@ -230,7 +355,13 @@ fn render_methods(names: &[String], nodes: &[i64], lists: &[Vec<i64>], methods: 
     }
 }
 
-fn render_attached_docs(names: &[String], nodes: &[i64], lists: &[Vec<i64>], target: i64, output: &mut String) {
+/// The prose the parser attached to `target`, paragraph by paragraph.
+///
+/// One extraction, two renderings: the HTML page below and the JSON
+/// document both format this. Re-walking the doc rows separately for each
+/// would be two chances to disagree about what a declaration documents.
+fn attached_docs(names: &[String], nodes: &[i64], lists: &[Vec<i64>], target: i64) -> Vec<String> {
+    let mut paragraphs: Vec<String> = Vec::new();
     let mut node = 0i64;
     let count = nodes.len() as i64 / NODE_STRIDE;
     while node < count {
@@ -241,12 +372,19 @@ fn render_attached_docs(names: &[String], nodes: &[i64], lists: &[Vec<i64>], tar
                 let text = name_text(names, list_get(lists, docs, idx));
                 let trimmed = text.trim();
                 if !trimmed.is_empty() {
-                    output.push_str(&format!("<p>{}</p>", escape_html(trimmed).replace('\n', "<br>")));
+                    paragraphs.push(trimmed.to_string());
                 }
                 idx += 1;
             }
         }
         node += 1;
+    }
+    paragraphs
+}
+
+fn render_attached_docs(names: &[String], nodes: &[i64], lists: &[Vec<i64>], target: i64, output: &mut String) {
+    for paragraph in attached_docs(names, nodes, lists, target) {
+        output.push_str(&format!("<p>{}</p>", escape_html(&paragraph).replace('\n', "<br>")));
     }
 }
 

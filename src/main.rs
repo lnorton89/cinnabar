@@ -63,7 +63,9 @@ struct CliArgs {
 }
 
 enum ToolCommand {
-    Doc(Option<PathBuf>),
+    // The output directory, and whether the caller wants the document
+    // rather than the page.
+    Doc(Option<PathBuf>, bool),
     Burn(String),
     Build(String),
     Run(String),
@@ -79,6 +81,7 @@ enum ToolCommand {
     FuzzMinimize,
     Soundness,
     Playground(String),
+    Snapshots(String, bool),
 }
 
 fn project_path_arg() -> Arg {
@@ -266,6 +269,12 @@ fn parse_args() -> Option<CliArgs> {
                         .value_name("DIR")
                         .value_parser(PathBufValueParser::new())
                         .help("Documentation output directory (default: target/doc)"),
+                )
+                .arg(
+                    Arg::new("doc_emit_json")
+                        .long("emit-json")
+                        .action(ArgAction::SetTrue)
+                        .help("Write the public API as one JSON document on standard output instead of rendering a page"),
                 ),
         )
         .subcommand(
@@ -538,6 +547,39 @@ fn parse_args() -> Option<CliArgs> {
                 ),
         )
         .subcommand(
+            ClapCommand::new("snapshots")
+                .about("Review diagnostic snapshot changes one fixture at a time")
+                .long_about(
+                    "Serve a local page showing every rejection test in the project \
+                     beside the diagnostic its '.stderr' sidecar records and the one \
+                     the compiler prints now.\n\n\
+                     'cinnabar test --update-snapshots' accepts every changed snapshot \
+                     at once, which is the wrong granularity for the change that most \
+                     often produces them: improving a diagnostic rewrites many \
+                     snapshots, most of them better and one of them by accident. Here \
+                     each fixture is accepted or left alone on its own, and accepting \
+                     writes that one sidecar.\n\n\
+                     The comparison shown is the one 'cinnabar test' makes, not a \
+                     second one. It binds a loopback address only: it writes files in \
+                     your project on request.\n\n\
+                     With --emit-json the same report is written to standard output \
+                     instead of served, for a reviewer that is not a browser.",
+                )
+                .arg(project_path_arg())
+                .arg(
+                    Arg::new("address")
+                        .long("address")
+                        .default_value("127.0.0.1:7880")
+                        .help("Loopback address to bind"),
+                )
+                .arg(
+                    Arg::new("snapshots_emit_json")
+                        .long("emit-json")
+                        .action(ArgAction::SetTrue)
+                        .help("Write the report to standard output as one JSON document instead of serving it"),
+                ),
+        )
+        .subcommand(
             ClapCommand::new("playground")
                 .about("Serve a loopback-only local Cinnabar playground")
                 .long_about(
@@ -585,7 +627,10 @@ fn parse_args() -> Option<CliArgs> {
         if let Some(subcommand_matches) = matches.subcommand_matches(subcommand_name) {
             let input = subcommand_matches.get_one::<PathBuf>("project_path")?.clone();
             let tool_command = if subcommand_name == "doc" {
-                ToolCommand::Doc(subcommand_matches.get_one::<PathBuf>("doc_output").cloned())
+                ToolCommand::Doc(
+                    subcommand_matches.get_one::<PathBuf>("doc_output").cloned(),
+                    subcommand_matches.get_flag("doc_emit_json"),
+                )
             } else if subcommand_name == "burn" {
                 let address = subcommand_matches.get_one::<String>("address")?.clone();
                 ToolCommand::Burn(address)
@@ -650,6 +695,16 @@ fn parse_args() -> Option<CliArgs> {
         if let Some(minimize) = fuzz.subcommand_matches("minimize") {
             return Some(tool_args(minimize.get_one::<PathBuf>("project_path")?.clone(), ToolCommand::FuzzMinimize, minimize.get_one::<PathBuf>("output").cloned()));
         }
+    }
+    if let Some(snapshots) = matches.subcommand_matches("snapshots") {
+        return Some(tool_args(
+            snapshots.get_one::<PathBuf>("project_path")?.clone(),
+            ToolCommand::Snapshots(
+                snapshots.get_one::<String>("address")?.clone(),
+                snapshots.get_flag("snapshots_emit_json"),
+            ),
+            None,
+        ));
     }
     if let Some(playground) = matches.subcommand_matches("playground") {
         return Some(tool_args(PathBuf::from("."), ToolCommand::Playground(playground.get_one::<String>("address")?.clone()), None));
@@ -957,8 +1012,8 @@ fn format_file(path: &Path, check: bool) -> ExitCode {
 
 fn run_tool_command(path: &Path, output: Option<&Path>, command: ToolCommand) -> ExitCode {
     match command {
-        ToolCommand::Doc(output) => generate_documentation(path, output.as_deref(), false, None),
-        ToolCommand::Burn(address) => generate_documentation(path, None, true, Some(&address)),
+        ToolCommand::Doc(output, emit_json) => generate_documentation(path, output.as_deref(), false, None, emit_json),
+        ToolCommand::Burn(address) => generate_documentation(path, None, true, Some(&address), false),
         ToolCommand::Build(target) => run_project_compiler(path, false, false, &target),
         ToolCommand::Run(target) => run_project_compiler(path, true, false, &target),
         ToolCommand::Check => run_project_compiler(path, false, true, "host"),
@@ -980,6 +1035,7 @@ fn run_tool_command(path: &Path, output: Option<&Path>, command: ToolCommand) ->
         ToolCommand::FuzzMinimize => minimize_fuzz(path, output),
         ToolCommand::Soundness => emit_soundness(path, output),
         ToolCommand::Playground(address) => run_playground(&address),
+        ToolCommand::Snapshots(address, emit_json) => review_snapshots(path, &address, emit_json),
     }
 }
 
@@ -1164,6 +1220,28 @@ fn run_playground(address: &str) -> ExitCode {
     }
 }
 
+fn review_snapshots(path: &Path, address: &str, emit_json: bool) -> ExitCode {
+    let manifest = match project::discover(path) {
+        Ok(value) => value,
+        Err(failure) => return finish_with_manifest_error(&failure),
+    };
+    let executable = match current_executable() {
+        Ok(value) => value,
+        Err(message) => return source_less_failure(&message),
+    };
+    if emit_json {
+        return match cinnabar::snapshot_review::snapshots_json(&executable, &manifest) {
+            Ok(report) => emit_report(&report),
+            Err(failure) => finish_with_manifest_error(&failure),
+        };
+    }
+    println!("Cinnabar snapshot review is available at http://{}", address);
+    match cinnabar::snapshot_review::serve(address, &executable, &manifest, report_source_less) {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(message) => source_less_failure(&message),
+    }
+}
+
 fn project_or_source(path: &Path) -> Result<(PathBuf, PathBuf), project::ManifestError> {
     let is_source = path.is_file()
         && path.file_name().and_then(|name| name.to_str()) != Some(project::MANIFEST_FILE)
@@ -1179,7 +1257,7 @@ fn project_or_source(path: &Path) -> Result<(PathBuf, PathBuf), project::Manifes
     Ok((manifest.root, manifest.entry))
 }
 
-fn generate_documentation(path: &Path, output: Option<&Path>, serve: bool, address: Option<&str>) -> ExitCode {
+fn generate_documentation(path: &Path, output: Option<&Path>, serve: bool, address: Option<&str>, emit_json: bool) -> ExitCode {
     let (root, entry) = match project_or_source(path) {
         Ok(value) => value,
         Err(failure) => return finish_with_manifest_error(&failure),
@@ -1187,7 +1265,18 @@ fn generate_documentation(path: &Path, output: Option<&Path>, serve: bool, addre
     let entry_text = entry.to_string_lossy().to_string();
     let analyzed = analysis::analyze(&entry_text, &[]);
     if !analyzed.errors.is_empty() {
-        return finish_with_diagnostics(&analyzed.errors, &analyzed.notes, &analyzed.files);
+        return report_diagnostics(emit_json, &analyzed.errors, &analyzed.notes, &analyzed.files);
+    }
+    if emit_json {
+        // The document, not a page: a documentation site that wants to lay
+        // out its own pages should not have to strip the compiler's.
+        return emit_report(&docs::docs_json(
+            &analyzed.names,
+            &analyzed.nodes,
+            &analyzed.lists,
+            analyzed.root,
+            &analyzed.files,
+        ));
     }
     let api_html = docs::render_api_docs(&analyzed.names, &analyzed.nodes, &analyzed.lists, analyzed.root);
     if serve {

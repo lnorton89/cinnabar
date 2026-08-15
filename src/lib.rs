@@ -28,5 +28,6 @@ pub mod native_stub;
 pub mod parser;
 pub mod project;
 pub mod resolver;
+pub mod snapshot_review;
 pub mod suggest;
 pub mod typecheck;

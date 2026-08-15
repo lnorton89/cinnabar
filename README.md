@@ -303,7 +303,8 @@ the executed program writes to the same stream the document would.
 | `cinnabar check [PATH]` | Load, resolve, typecheck, and borrow-check; stop before code generation. Needs no LLVM and links nothing |
 | `cinnabar test [PATH] [--update-snapshots]` | Compile and run every `.cnb` file under the manifest's `TESTS` directory, recursively |
 | `cinnabar fmt [--check] <FILE>` | Rewrite one file into canonical form, or (with `--check`) exit non-zero if it isn't already |
-| `cinnabar doc [PATH] [-o DIR]` | Render every public declaration into `<project>/target/doc/index.html` |
+| `cinnabar doc [PATH] [-o DIR] [--emit-json]` | Render every public declaration into `<project>/target/doc/index.html`, or with `--emit-json` write it as a `cinnabar.docs.v1` document for a documentation site to lay out itself |
+| `cinnabar snapshots [PATH] [--address ADDR] [--emit-json]` | Review diagnostic snapshot changes one fixture at a time, on a loopback page. Accepting writes that one `.stderr` sidecar; `test --update-snapshots` accepts all of them at once |
 | `cinnabar burn [PATH] [--address ADDR]` | Serve those docs plus the manifesto over HTTP, pinned to this compiler's version (default `127.0.0.1:7878`) |
 
 `PATH` defaults to `.` and may be a project directory, a `build.cnb`, or a source path inside the

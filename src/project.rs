@@ -625,6 +625,89 @@ pub fn run_tests(executable: &Path, manifest: &ProjectManifest, update_snapshots
     Ok(TestSummary { discovered: tests.len(), passed, failed })
 }
 
+/// One rejection test, as a reviewer needs to see it: the snapshot on
+/// disk and what the compiler prints now.
+pub struct SnapshotEntry {
+    /// The test source, relative to the project root.
+    pub test: String,
+    /// The `.stderr` sidecar, relative to the project root.
+    pub snapshot: String,
+    /// Whether a sidecar exists yet. A rejection test without one is
+    /// pinned by nothing, which is a state worth seeing rather than
+    /// silently treating as agreement.
+    pub recorded: bool,
+    /// The sidecar's contents, normalized, or empty when there is none.
+    pub expected: String,
+    /// What the compiler prints today, normalized the same way.
+    pub actual: String,
+    /// Whether the compiler still rejects the program at all.
+    pub rejected: bool,
+}
+
+impl SnapshotEntry {
+    /// Whether the recorded snapshot still describes what the compiler
+    /// prints.
+    pub fn agrees(&self) -> bool {
+        self.recorded && self.expected == self.actual
+    }
+}
+
+/// Every rejection test in the project, with its snapshot and its current
+/// diagnostic.
+///
+/// This runs the same discovery, the same compile, and the same
+/// normalization `run_tests` does, so a reviewer is shown exactly the
+/// comparison the test suite makes — not a second one that could call a
+/// difference where the suite sees none.
+pub fn snapshot_report(executable: &Path, manifest: &ProjectManifest) -> Result<Vec<SnapshotEntry>, ManifestError> {
+    let tests = discover_tests(manifest)?;
+    let mut entries = Vec::new();
+    for test in &tests {
+        let snapshot = snapshot_path(test);
+        let recorded = sidecar_present(&snapshot, "diagnostic snapshot")?;
+        if !is_rejection_test(test) && !recorded {
+            continue;
+        }
+        let project_relative = test
+            .strip_prefix(&manifest.root)
+            .map_err(|prefix_error| format!("cannot relativize test '{}': {}", test.display(), prefix_error))?;
+        let snapshot_relative = snapshot
+            .strip_prefix(&manifest.root)
+            .map_err(|prefix_error| format!("cannot relativize snapshot '{}': {}", snapshot.display(), prefix_error))?;
+        let mut compile_command = Command::new(executable);
+        compile_command.current_dir(&manifest.root).arg(project_relative);
+        let compile = output_with_timeout(
+            &mut compile_command,
+            Duration::from_secs(TEST_COMPILE_TIMEOUT_SECS),
+            &format!("compiler for '{}'", test.display()),
+        )?;
+        let expected = if recorded {
+            normalize_text(&read_confined(&manifest.root, &snapshot, "diagnostic snapshot")?)
+        } else {
+            String::new()
+        };
+        entries.push(SnapshotEntry {
+            test: project_relative.to_string_lossy().to_string(),
+            snapshot: snapshot_relative.to_string_lossy().to_string(),
+            recorded,
+            expected,
+            actual: diagnostic_text(&compile),
+            rejected: !compile.status.success(),
+        });
+    }
+    Ok(entries)
+}
+
+/// Write one snapshot, as `--update-snapshots` would.
+///
+/// It goes through the same confinement check every other sidecar write
+/// does, so accepting a snapshot cannot write outside the project even if
+/// a caller asks it to.
+pub fn accept_snapshot(manifest: &ProjectManifest, snapshot_relative: &str, text: &str) -> Result<(), ManifestError> {
+    let snapshot = manifest.root.join(snapshot_relative);
+    write_confined(&manifest.root, &snapshot, "diagnostic snapshot", text)
+}
+
 #[derive(Debug, Eq, PartialEq)]
 pub struct TestSummary {
     pub discovered: usize,
@@ -733,11 +816,24 @@ fn exit_path(path: &Path) -> PathBuf {
     PathBuf::from(format!("{}.exit", path.display()))
 }
 
+/// What a rejected compile printed, wherever it printed it.
+///
+/// The reporter renders through ariadne, which writes to standard output,
+/// so a snapshot that read only `stderr` would record an empty string and
+/// pin nothing — which is exactly what a diagnostic snapshot exists not to
+/// do. Both streams are read so the sidecar holds the diagnostic the user
+/// saw, in the order they saw it.
+fn diagnostic_text(compile: &Output) -> String {
+    let mut text = String::from_utf8_lossy(&compile.stdout).to_string();
+    text.push_str(&String::from_utf8_lossy(&compile.stderr));
+    normalize_text(&text)
+}
+
 fn check_rejection(root: &Path, test: &Path, snapshot: &Path, compile: &Output, update_snapshots: bool) -> Result<(), ManifestError> {
     if compile.status.success() {
         return Err(ManifestError::source_less(format!("{}: expected rejection but compilation succeeded", test.display())));
     }
-    let actual = normalize_text(&String::from_utf8_lossy(&compile.stderr));
+    let actual = diagnostic_text(compile);
     if update_snapshots {
         write_confined(root, snapshot, "diagnostic snapshot", &actual)?;
         return Ok(());
@@ -793,8 +889,42 @@ fn status_matches(status: ExitStatus, expected: i32, test: &Path) -> Result<(), 
     }
 }
 
+/// A diagnostic reduced to what it says.
+///
+/// Line endings are normalized so a snapshot recorded on one platform
+/// still matches on another, and ANSI colour sequences are removed: the
+/// reporter colours its output whether or not a terminal is attached, and
+/// a sidecar that recorded those escapes would be pinning how a diagnostic
+/// looked rather than what it said — and would render as line noise in
+/// every review of it.
 fn normalize_text(text: &str) -> String {
-    text.replace("\r\n", "\n")
+    let unified = text.replace("\r\n", "\n");
+    let mut out = String::with_capacity(unified.len());
+    let mut characters = unified.chars();
+    while let Some(character) = characters.next() {
+        if character != '\u{1b}' {
+            out.push(character);
+            continue;
+        }
+        // A CSI sequence: ESC '[' then parameter and intermediate bytes,
+        // ended by a byte in the final range. Anything else following an
+        // ESC is left alone rather than guessed at.
+        match characters.next() {
+            Some('[') => {
+                for following in characters.by_ref() {
+                    if ('\u{40}'..='\u{7e}').contains(&following) {
+                        break;
+                    }
+                }
+            }
+            Some(other) => {
+                out.push(character);
+                out.push(other);
+            }
+            None => out.push(character),
+        }
+    }
+    out
 }
 
 #[cfg(test)]
