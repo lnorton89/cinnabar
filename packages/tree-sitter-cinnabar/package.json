@@ -1,0 +1,25 @@
+{
+  "name": "tree-sitter-cinnabar",
+  "version": "0.1.0",
+  "description": "Cinnabar grammar for tree-sitter.",
+  "license": "Apache-2.0 WITH LLVM-exception",
+  "main": "bindings/node",
+  "types": "bindings/node/index.d.ts",
+  "keywords": ["parser", "lexer", "tree-sitter", "cinnabar"],
+  "files": ["grammar.js", "binding.gyp", "bindings/node", "queries/*.scm", "src/**"],
+  "tree-sitter": [
+    {
+      "scope": "source.cinnabar",
+      "file-types": ["cnb"],
+      "highlights": "queries/highlights.scm",
+      "injection-regex": "^cinnabar$"
+    }
+  ],
+  "scripts": {
+    "generate": "tree-sitter generate",
+    "test": "tree-sitter test"
+  },
+  "devDependencies": {
+    "tree-sitter-cli": "^0.26.0"
+  }
+}

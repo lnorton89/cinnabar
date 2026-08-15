@@ -1,0 +1,134 @@
+================================================================================
+A constant, with its type and its value
+================================================================================
+
+pub const MAX_PORT: I64 = 65535
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (const_declaration
+    (visibility)
+    name: (constant_identifier)
+    type: (type_identifier)
+    value: (integer_literal)))
+
+================================================================================
+A struct: named fields make it a product type
+================================================================================
+
+pub type Point
+  pub x: I64
+  pub y: I64
+end
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (type_declaration
+    (visibility)
+    name: (type_identifier)
+    body: (field_declaration
+      (visibility)
+      name: (identifier)
+      type: (type_identifier))
+    body: (field_declaration
+      (visibility)
+      name: (identifier)
+      type: (type_identifier))))
+
+================================================================================
+An enum: the same keyword, PascalCase members make it a sum type
+================================================================================
+
+pub type RangeError
+  pub TooSmall(I64)
+  pub TooLarge(I64)
+end
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (type_declaration
+    (visibility)
+    name: (type_identifier)
+    body: (variant_declaration
+      (visibility)
+      name: (type_identifier)
+      (type_identifier))
+    body: (variant_declaration
+      (visibility)
+      name: (type_identifier)
+      (type_identifier))))
+
+================================================================================
+A native function has no body, because it names a runtime surface
+================================================================================
+
+pub nat fun allocate(size: Usize) impure Result(Block, Error)
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (native_function_declaration
+    (visibility)
+    name: (identifier)
+    parameters: (parameters
+      (parameter
+        name: (identifier)
+        type: (type_identifier)))
+    (impure)
+    return_type: (generic_type
+      constructor: (type_identifier)
+      (type_identifier)
+      (type_identifier))))
+
+================================================================================
+A parameter list spread over lines: those newlines are continuation
+================================================================================
+
+pub nat fun write_u8(
+  block: &Block,
+  offset: Usize,
+  value: U8
+) impure Result(Unit, Error)
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (native_function_declaration
+    (visibility)
+    name: (identifier)
+    parameters: (parameters
+      (parameter
+        name: (identifier)
+        type: (reference_type
+          type: (type_identifier)))
+      (parameter
+        name: (identifier)
+        type: (type_identifier))
+      (parameter
+        name: (identifier)
+        type: (type_identifier)))
+    (impure)
+    return_type: (generic_type
+      constructor: (type_identifier)
+      (type_identifier)
+      (type_identifier))))
+
+================================================================================
+An empty body is legal and lowers to Unit
+================================================================================
+
+pub fun empty_body() Unit
+end
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (function_declaration
+    signature: (function_signature
+      (visibility)
+      name: (identifier)
+      parameters: (parameters)
+      return_type: (type_identifier))))

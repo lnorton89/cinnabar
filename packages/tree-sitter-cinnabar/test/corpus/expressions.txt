@@ -1,0 +1,207 @@
+================================================================================
+A call whose callee is a type name: a variant constructor
+================================================================================
+
+fun f() Port
+  return Port(DEFAULT_PORT)
+end
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (function_declaration
+    signature: (function_signature
+      name: (identifier)
+      parameters: (parameters)
+      return_type: (type_identifier))
+    body: (block
+      (return_statement
+        value: (call_expression
+          function: (type_identifier)
+          arguments: (arguments
+            (constant_identifier)))))))
+
+================================================================================
+A struct literal: the same shape, but its arguments are named
+================================================================================
+
+fun f() Point
+  return Point(x: 1, y: 2)
+end
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (function_declaration
+    signature: (function_signature
+      name: (identifier)
+      parameters: (parameters)
+      return_type: (type_identifier))
+    body: (block
+      (return_statement
+        value: (struct_expression
+          type: (type_identifier)
+          field: (field_initializer
+            name: (identifier)
+            value: (integer_literal))
+          field: (field_initializer
+            name: (identifier)
+            value: (integer_literal)))))))
+
+================================================================================
+Precedence: multiplication binds tighter than addition
+================================================================================
+
+fun f() I64
+  return 1 + 2 * 3
+end
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (function_declaration
+    signature: (function_signature
+      name: (identifier)
+      parameters: (parameters)
+      return_type: (type_identifier))
+    body: (block
+      (return_statement
+        value: (binary_expression
+          left: (integer_literal)
+          right: (binary_expression
+            left: (integer_literal)
+            right: (integer_literal)))))))
+
+================================================================================
+A dotted chain is a path; the resolver decides which segment is a field
+================================================================================
+
+fun f() U32
+  return header.expected
+end
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (function_declaration
+    signature: (function_signature
+      name: (identifier)
+      parameters: (parameters)
+      return_type: (type_identifier))
+    body: (block
+      (return_statement
+        value: (path
+          (identifier)
+          (identifier))))))
+
+================================================================================
+A trailing comment does not stop the line from ending
+================================================================================
+
+fun f() I64
+  return 0 # this is a comment
+end
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (function_declaration
+    signature: (function_signature
+      name: (identifier)
+      parameters: (parameters)
+      return_type: (type_identifier))
+    body: (block
+      (return_statement
+        value: (integer_literal)))))
+
+================================================================================
+Match arms: the block body ends where the next arm's pattern begins
+================================================================================
+
+fun f(port: Port) I64
+  match port
+    Port(value) => return value
+    Other(value) =>
+      val doubled = value + value
+      return doubled
+  end
+end
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (function_declaration
+    signature: (function_signature
+      name: (identifier)
+      parameters: (parameters
+        (parameter
+          name: (identifier)
+          type: (type_identifier)))
+      return_type: (type_identifier))
+    body: (block
+      (expression_statement
+        (match_expression
+          value: (identifier)
+          arm: (match_arm
+            pattern: (variant_pattern
+              variant: (type_identifier)
+              (identifier))
+            body: (return_statement
+              value: (identifier)))
+          arm: (match_arm
+            pattern: (variant_pattern
+              variant: (type_identifier)
+              (identifier))
+            body: (block
+              (let_statement
+                name: (identifier)
+                value: (binary_expression
+                  left: (identifier)
+                  right: (identifier)))
+              (return_statement
+                value: (identifier)))))))))
+
+================================================================================
+A rest pattern binds what is left; this language has no discard
+================================================================================
+
+fun f(view: &[U8]) Option(SplitFirst)
+  match view
+    [] => return None
+    [first, rest @ ..] => return Some(first)
+  end
+end
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (function_declaration
+    signature: (function_signature
+      name: (identifier)
+      parameters: (parameters
+        (parameter
+          name: (identifier)
+          type: (reference_type
+            type: (slice_type
+              element: (type_identifier)))))
+      return_type: (generic_type
+        constructor: (type_identifier)
+        (type_identifier)))
+    body: (block
+      (expression_statement
+        (match_expression
+          value: (identifier)
+          arm: (match_arm
+            pattern: (array_pattern)
+            body: (return_statement
+              value: (type_identifier)))
+          arm: (match_arm
+            pattern: (array_pattern
+              (identifier)
+              rest: (rest_pattern
+                name: (identifier)))
+            body: (return_statement
+              value: (call_expression
+                function: (type_identifier)
+                arguments: (arguments
+                  (identifier))))))))))

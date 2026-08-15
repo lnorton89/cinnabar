@@ -1,0 +1,18 @@
+{
+  "name": "cinnabar-monaco",
+  "version": "0.1.0",
+  "description": "Cinnabar language support for the Monaco editor: a Monarch tokenizer and language configuration.",
+  "license": "Apache-2.0 WITH LLVM-exception",
+  "main": "src/index.js",
+  "files": ["src", "README.md"],
+  "keywords": ["monaco", "monaco-editor", "cinnabar", "syntax-highlighting"],
+  "scripts": {
+    "test": "node --test"
+  },
+  "peerDependencies": {
+    "monaco-editor": ">=0.40.0"
+  },
+  "peerDependenciesMeta": {
+    "monaco-editor": { "optional": true }
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "grammars": [
+    {
+      "name": "cinnabar",
+      "camelcase": "Cinnabar",
+      "scope": "source.cinnabar",
+      "path": ".",
+      "file-types": ["cnb"],
+      "highlights": ["queries/highlights.scm"],
+      "injection-regex": "^cinnabar$"
+    }
+  ],
+  "metadata": {
+    "version": "0.1.0",
+    "license": "Apache-2.0 WITH LLVM-exception",
+    "description": "Cinnabar grammar for tree-sitter",
+    "authors": [{ "name": "Cinnabar contributors" }]
+  }
+}
