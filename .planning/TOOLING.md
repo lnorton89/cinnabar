@@ -25,7 +25,8 @@ Most languages need tooling to paper over implicit behavior (lifetimes, coercion
 | **`--explain-borrow`** | `src/borrow.rs` + `src/ast.rs` (`Note`) | Secondary labels on borrow/linearity errors |
 | **`cinnabar::analysis`** | `src/analysis.rs` | Hover, go-to-def, references, completion, signature help over attached facts; unsaved-buffer overlay |
 | **`cinnabar-lsp`** | `src/bin/cinnabar_lsp.rs` | Diagnostics and attached-facts queries; debounced single-flight analysis, stale-result suppression, multi-root graph reconciliation, borrow code lenses |
-| **Structured borrow explanations** | `src/main.rs` | `--explain-borrow=json` emits versioned diagnostics and checker-produced path notes with real source spans |
+| **Structured diagnostics** | `src/emit_json.rs` | The `cinnabar.diagnostics.v1` envelope: every stage's diagnostics with their checker-produced explanations, real source spans, and LSP-style positions. `--explain-borrow=json` is the older spelling of the same request |
+| **`--emit-json`** | `src/emit_json.rs`, `src/inspect.rs`, `src/codegen/layout.rs` | One JSON document per invocation: the parse-only or fully attributed arena, the layout report, or the diagnostic envelope |
 | **VS Code / Cursor package** | `editors/vscode/` | Launches `cinnabar-lsp`, registers `.cnb`, language configuration, and the canonical TextMate grammar |
 | **`cinnabar fmt`** | `src/format.rs` | Canonical, idempotent indentation and blank-line formatting; `--check` mode for automation |
 | **Documentation pipeline** | `src/lexer.rs`, `src/parser.rs`, `src/docs.rs` | Attached doc facts, public API HTML, and version-pinned Cinnabook server |
@@ -95,8 +96,9 @@ would violate the Single-Fact Rule.
 
 `Note` rows cover inconsistent join predecessors (consumed vs live branch ends), binding sites with
 their attached linear types, same-block prior move sites, unconsumed exits, and invalid container
-free guidance. CLI `--explain-borrow` renders secondary labels; `--explain-borrow=json` exposes the
-same facts through the versioned `cinnabar.borrow-explanations.v1` schema; the LSP sends related
+free guidance. CLI `--explain-borrow` renders secondary labels; `--explain-borrow=json` and
+`--emit-json` expose the same facts through the versioned `cinnabar.diagnostics.v1` envelope, which
+carries every stage's diagnostics rather than only the borrow checker's; the LSP sends related
 information and code lenses.
 
 Mushlings consumption of exact diagnostic and note text belongs to Tier 6, where the exercise
@@ -104,7 +106,7 @@ runner is defined; the compiler-facing explanation surface it will consume is co
 
 ### Low-level inspection — done
 
-`--emit-llvm`, `--emit-obj`, `--dump-typed-ast`, `--print-layout` cover the systems-programmer and self-hosting debugging needs. Future: source-correlated disassembly once debug info is emitted.
+`--emit-llvm`, `--emit-obj`, `--dump-typed-ast`, `--print-layout` cover the systems-programmer and self-hosting debugging needs, and `--emit-json` renders the arena, the layout report and the diagnostics as versioned documents so a tool consumes them without scraping terminal text. Future: source-correlated disassembly once debug info is emitted.
 
 ---
 

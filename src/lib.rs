@@ -19,6 +19,7 @@ pub mod borrow;
 #[cfg(feature = "codegen")]
 pub mod codegen;
 pub mod docs;
+pub mod emit_json;
 pub mod format;
 pub mod inspect;
 pub mod lexer;

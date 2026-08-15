@@ -8,6 +8,11 @@
 //! substitution path) and enum variant tags are read from the typechecker's
 //! `NODE_VARFACT` rows.
 //!
+//! The measurement runs once, in `measure_all`, and the two renderings —
+//! the aligned text report and the `--emit-json` document — format its
+//! result. Measuring twice would be two chances to disagree about a size
+//! the binary has only one of.
+//!
 //! **Invariants:**
 //! - Nothing here re-derives a layout fact by parallel logic. A number this
 //!   report prints is one the real build would use, or it is not printed —
@@ -20,9 +25,16 @@ use crate::codegen::host_target;
 use crate::codegen::types::{
     llvm_type, payload_struct_of, struct_field_keys, EnumInfos, KeyTypes, PayloadStructs, TyEnv,
 };
+use crate::emit_json::LAYOUT_FORMAT;
 use crate::typecheck::render_type_key;
 use inkwell::context::Context;
 use inkwell::types::BasicTypeEnum;
+use serde_json::{json, Value};
+
+// The discriminant every enum is lowered with.  Both renderings report it,
+// so it is named once here rather than spelled into each of them, where the
+// two could drift apart while the emitter moved under both.
+const ENUM_TAG_TYPE: &str = "I64";
 
 struct FieldLayout {
     name: i64,
@@ -47,13 +59,14 @@ struct TypeLayout {
     variants: Vec<VariantLayout>,
 }
 
-/// Render the layout report for every concrete struct/enum/native key in
-/// the arena.  Runs after the full front-end; requires no linking tools.
-pub fn render_layouts(
+/// Measure every concrete struct/enum/native key in the arena, and report
+/// the host triple they were measured for.  Runs after the full front-end;
+/// requires no linking tools.
+fn measure_all(
     names: &[String],
     nodes: &mut Vec<i64>,
     lists: &mut Vec<Vec<i64>>,
-) -> Result<String, CodegenError> {
+) -> Result<(Vec<TypeLayout>, String), CodegenError> {
     let candidates = collect_candidates(nodes, lists);
     let context = Context::create();
     let (target_data, triple) = host_target()?;
@@ -82,11 +95,18 @@ pub fn render_layouts(
             idx += 1;
         }
     }
+    Ok((layouts, triple.as_str().to_string_lossy().to_string()))
+}
+
+/// Render the layout report as the aligned text a terminal reads.
+pub fn render_layouts(
+    names: &[String],
+    nodes: &mut Vec<i64>,
+    lists: &mut Vec<Vec<i64>>,
+) -> Result<String, CodegenError> {
+    let (layouts, triple) = measure_all(names, nodes, lists)?;
     let mut out = String::new();
-    out.push_str(&format!(
-        "# type layouts for {} (sizes and offsets in bytes)\n",
-        triple.as_str().to_string_lossy()
-    ));
+    out.push_str(&format!("# type layouts for {} (sizes and offsets in bytes)\n", triple));
     let mut idx = 0usize;
     while idx < layouts.len() {
         match layouts.get(idx) {
@@ -96,6 +116,102 @@ pub fn render_layouts(
         idx += 1;
     }
     Ok(out)
+}
+
+/// Render the same measurement as one JSON document.
+///
+/// Sizes, alignments, offsets and variant tags are the values `measure_all`
+/// produced, so this document and the text report cannot disagree; only the
+/// spelling differs.
+pub fn layouts_json(
+    names: &[String],
+    nodes: &mut Vec<i64>,
+    lists: &mut Vec<Vec<i64>>,
+) -> Result<Value, CodegenError> {
+    let (layouts, triple) = measure_all(names, nodes, lists)?;
+    let mut types: Vec<Value> = Vec::new();
+    let mut idx = 0usize;
+    while idx < layouts.len() {
+        match layouts.get(idx) {
+            Some(layout) => types.push(layout_json(names, nodes, lists, layout)),
+            None => break,
+        }
+        idx += 1;
+    }
+    Ok(json!({
+        "format": LAYOUT_FORMAT,
+        "target": triple,
+        "types": types
+    }))
+}
+
+fn layout_json(names: &[String], nodes: &[i64], lists: &[Vec<i64>], layout: &TypeLayout) -> Value {
+    let rendered = render_type_key(names, nodes, lists, layout.key);
+    if layout.kind == TYD_STRUCT {
+        let mut fields: Vec<Value> = Vec::new();
+        let mut idx = 0usize;
+        while idx < layout.fields.len() {
+            match layout.fields.get(idx) {
+                Some(field) => fields.push(json!({
+                    "name": name_text(names, field.name),
+                    "type": render_type_key(names, nodes, lists, field.key),
+                    "key": field.key,
+                    "offset": field.offset,
+                    "size": field.size
+                })),
+                None => break,
+            }
+            idx += 1;
+        }
+        return json!({
+            "kind": "struct",
+            "type": rendered,
+            "key": layout.key,
+            "size": layout.size,
+            "align": layout.align,
+            "fields": fields
+        });
+    }
+    if layout.kind == TYD_ENUM {
+        let mut variants: Vec<Value> = Vec::new();
+        let mut idx = 0usize;
+        while idx < layout.variants.len() {
+            match layout.variants.get(idx) {
+                Some(variant) => variants.push(json!({
+                    "name": name_text(names, variant.name),
+                    "tag": variant.tag,
+                    "payload_size": variant.payload_size
+                })),
+                None => break,
+            }
+            idx += 1;
+        }
+        // A payload offset of NONE is a tag-only enum, which has no payload
+        // to place rather than a payload at offset -1.
+        let payload_offset = if layout.payload_offset == NONE {
+            Value::Null
+        } else {
+            json!(layout.payload_offset)
+        };
+        return json!({
+            "kind": "enum",
+            "type": rendered,
+            "key": layout.key,
+            "size": layout.size,
+            "align": layout.align,
+            "tag_type": ENUM_TAG_TYPE,
+            "payload_offset": payload_offset,
+            "variants": variants
+        });
+    }
+    json!({
+        "kind": "native",
+        "type": rendered,
+        "key": layout.key,
+        "size": layout.size,
+        "align": layout.align,
+        "opaque": true
+    })
 }
 
 // Concrete struct/enum/native keys, in canonical key order.  A key
@@ -328,13 +444,13 @@ fn render_one(names: &[String], nodes: &[i64], lists: &[Vec<i64>], layout: &Type
     if layout.kind == TYD_ENUM {
         if layout.payload_offset == NONE {
             out.push_str(&format!(
-                "enum {}  size={} align={}  tag=I64 (no payload)\n",
-                rendered, layout.size, layout.align
+                "enum {}  size={} align={}  tag={} (no payload)\n",
+                rendered, layout.size, layout.align, ENUM_TAG_TYPE
             ));
         } else {
             out.push_str(&format!(
-                "enum {}  size={} align={}  tag=I64 payload-offset={}\n",
-                rendered, layout.size, layout.align, layout.payload_offset
+                "enum {}  size={} align={}  tag={} payload-offset={}\n",
+                rendered, layout.size, layout.align, ENUM_TAG_TYPE, layout.payload_offset
             ));
         }
         let mut idx = 0usize;

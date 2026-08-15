@@ -13,9 +13,17 @@
 //! exercises, fuzz replay and minimization, the formatter, and the
 //! inspection flags all dispatch from this file into the library.
 //!
+//! `--emit-json` selects the machine-readable rendering of whatever the
+//! invocation produced, which `emit_json` and the files that own those
+//! facts define. This file decides only which rendering a run gets, so a
+//! consumer parses exactly one document per run — a diagnostic envelope
+//! with an empty list where a terminal would have been told the program
+//! compiled.
+//!
 //! **Invariants:**
 //! - This is the only place a typed error may become a string. Every stage
-//!   below carries its error, with a real span, until it arrives here.
+//!   below carries its error, with a real span, until it arrives here —
+//!   including on the way into the structured envelope.
 //! - `NO_FILE` renders as a genuinely source-less error rather than as a
 //!   location. A fact about a compiler-synthesized wrapper has no line in
 //!   the user's program to point at, and inventing one would be a lie the
@@ -30,7 +38,7 @@ use clap::builder::PathBufValueParser;
 use clap::{Arg, ArgAction, Command as ClapCommand};
 use cinnabar::codegen::error::codegen_error_message;
 use cinnabar::codegen::{compile_and_link, compile_to_ir, compile_to_object};
-use serde_json::{json, Value};
+use serde_json::Value;
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode};
 
@@ -41,6 +49,7 @@ struct CliArgs {
     dump_typed_ast: bool,
     print_layout: bool,
     explain_borrow: Option<String>,
+    emit_json: bool,
     run: bool,
     opt_level: String,
     emit_llvm: bool,
@@ -139,6 +148,13 @@ fn parse_args() -> Option<CliArgs> {
                 .default_missing_value("human")
                 .value_parser(clap::builder::PossibleValuesParser::new(["human", "json"]))
                 .help("Explain borrow/linearity errors with secondary labels, or emit structured diagnostics with --explain-borrow=json"),
+        )
+        .arg(
+            Arg::new("emit_json")
+                .long("emit-json")
+                .action(ArgAction::SetTrue)
+                .conflicts_with("run")
+                .help("Write this invocation's result to standard output as one JSON document: the arena under --dump-ast/--dump-typed-ast, the layout report under --print-layout, and otherwise the diagnostics, empty when the program is accepted"),
         )
         .arg(
             Arg::new("print_layout")
@@ -551,6 +567,7 @@ fn parse_args() -> Option<CliArgs> {
             dump_typed_ast: false,
             print_layout: false,
             explain_borrow: None,
+            emit_json: false,
             run: false,
             opt_level: "2".to_string(),
             emit_llvm: false,
@@ -601,6 +618,7 @@ fn parse_args() -> Option<CliArgs> {
                 dump_typed_ast: false,
                 print_layout: false,
                 explain_borrow: None,
+                emit_json: false,
                 run: false,
                 opt_level: "2".to_string(),
                 emit_llvm: false,
@@ -652,6 +670,7 @@ fn parse_args() -> Option<CliArgs> {
         dump_typed_ast: matches.get_flag("dump_typed_ast"),
         print_layout: matches.get_flag("print_layout"),
         explain_borrow: matches.get_one::<String>("explain_borrow").cloned(),
+        emit_json: matches.get_flag("emit_json"),
         run: matches.get_flag("run"),
         opt_level,
         emit_llvm: matches.get_flag("emit_llvm"),
@@ -670,7 +689,7 @@ fn target_arg() -> Arg {
 }
 
 fn tool_args(input: PathBuf, tool_command: ToolCommand, output: Option<PathBuf>) -> CliArgs {
-    CliArgs { input, output, dump_ast: false, dump_typed_ast: false, print_layout: false, explain_borrow: None, run: false, opt_level: "2".to_string(), emit_llvm: false, emit_obj: false, format_check: None, check_only: false, instrumented: false, static_link: false, target: "host".to_string(), tool_command: Some(tool_command) }
+    CliArgs { input, output, dump_ast: false, dump_typed_ast: false, print_layout: false, explain_borrow: None, emit_json: false, run: false, opt_level: "2".to_string(), emit_llvm: false, emit_obj: false, format_check: None, check_only: false, instrumented: false, static_link: false, target: "host".to_string(), tool_command: Some(tool_command) }
 }
 
 fn main() -> ExitCode {
@@ -691,12 +710,23 @@ fn main() -> ExitCode {
     let mut notes: Vec<Note> = Vec::new();
     let mut deferred: Vec<Diag> = Vec::new();
     let entry = args.input.to_string_lossy().to_string();
+    let json_out = args.emit_json;
     let (loaded, files) = module_loader::load(&mut names, &mut nodes, &mut lists, &mut errors, &entry);
     let (root, ext_mods) = match loaded {
         Some(program) => program,
-        None => return finish_with_diagnostics(&errors, &[], &files),
+        None => return report_diagnostics(json_out, &errors, &[], &files),
     };
     if args.dump_ast {
+        if json_out {
+            return emit_report(&cinnabar::inspect::arena_json(
+                &names,
+                &nodes,
+                &lists,
+                root,
+                &files,
+                cinnabar::emit_json::AST_FORMAT,
+            ));
+        }
         dump_program(&names, &nodes, &lists, root);
         return ExitCode::SUCCESS;
     }
@@ -706,15 +736,19 @@ fn main() -> ExitCode {
         deferred: &mut deferred,
     };
     if !resolver::resolve(&mut names, &mut nodes, &mut lists, resolver_diagnostics, root, &ext_mods) {
-        return finish_with_diagnostics(&errors, &notes, &files);
+        return report_diagnostics(json_out, &errors, &notes, &files);
     }
     let (ok, impls_list) = typecheck::typecheck(&mut names, &mut nodes, &mut lists, &mut errors, &mut notes, root, &ext_mods);
     if !ok {
-        return finish_with_diagnostics(&errors, &notes, &files);
+        return report_diagnostics(json_out, &errors, &notes, &files);
     }
     if !borrow::borrow_check(&mut names, &mut nodes, &mut lists, &mut errors, &mut notes, root, &ext_mods) {
-        if args.explain_borrow.as_deref() == Some("json") {
-            return finish_with_diagnostics_json(&errors, &notes, &files);
+        // The structured envelope always carries the checker's notes: a
+        // consumer asked for machine-readable output, and there is no
+        // terminal to keep uncluttered. --explain-borrow=json is the older
+        // spelling of that same request.
+        if json_out || args.explain_borrow.as_deref() == Some("json") {
+            return report_diagnostics(true, &errors, &notes, &files);
         }
         let shown_notes: &[Note] = if args.explain_borrow.as_deref() == Some("human") {
             &notes
@@ -728,17 +762,32 @@ fn main() -> ExitCode {
     // reachability first would stop the pipeline and answer a broken program
     // with a list of things nothing calls.
     if !deferred.is_empty() {
-        return finish_with_diagnostics(&deferred, &[], &files);
+        return report_diagnostics(json_out, &deferred, &[], &files);
     }
     if args.dump_typed_ast {
+        if json_out {
+            return emit_report(&cinnabar::inspect::arena_json(
+                &names,
+                &nodes,
+                &lists,
+                root,
+                &files,
+                cinnabar::emit_json::TYPED_AST_FORMAT,
+            ));
+        }
         print!("{}", cinnabar::inspect::dump_typed_arena(&names, &nodes, &lists));
         return ExitCode::SUCCESS;
     }
     if args.check_only {
-        println!("{} passed all front-end checks.", entry);
-        return ExitCode::SUCCESS;
+        return report_accepted(json_out, &format!("{} passed all front-end checks.", entry));
     }
     if args.print_layout {
+        if json_out {
+            return match cinnabar::codegen::layout::layouts_json(&names, &mut nodes, &mut lists) {
+                Ok(report) => emit_report(&report),
+                Err(codegen_err) => report_codegen_error(json_out, &codegen_err, &files),
+            };
+        }
         match cinnabar::codegen::layout::render_layouts(&names, &mut nodes, &mut lists) {
             Ok(report) => {
                 print!("{}", report);
@@ -753,10 +802,9 @@ fn main() -> ExitCode {
         let written = compile_to_ir(&names, &mut nodes, &mut lists, impls_list, entry_span, &args.target)
             .and_then(|ir_text| write_output_text(&out, &ir_text));
         if let Err(codegen_err) = written {
-            return finish_with_codegen_error(&codegen_err, &files);
+            return report_codegen_error(json_out, &codegen_err, &files);
         }
-        println!("Emitted LLVM IR for {} to '{}'.", entry, out.display());
-        return ExitCode::SUCCESS;
+        return report_accepted(json_out, &format!("Emitted LLVM IR for {} to '{}'.", entry, out.display()));
     }
     if args.emit_obj {
         let out = emit_out_path(&args, "o");
@@ -772,17 +820,26 @@ fn main() -> ExitCode {
         if let Err(codegen_err) =
             compile_to_object(&names, &mut nodes, &mut lists, impls_list, &target, entry_span)
         {
-            return finish_with_codegen_error(&codegen_err, &files);
+            return report_codegen_error(json_out, &codegen_err, &files);
         }
-        println!("Emitted object file for {} to '{}'.", entry, out.display());
-        return ExitCode::SUCCESS;
+        return report_accepted(json_out, &format!("Emitted object file for {} to '{}'.", entry, out.display()));
     }
     let out = match &args.output {
         Some(path) => path.clone(),
         None => default_out_path(&args.input),
     };
     if args.static_link && (args.target != "host" && args.target != "linux" || !cfg!(all(feature = "static-musl", target_os = "linux"))) {
-        return source_less_failure("--static requires a Linux compiler built with the static-musl feature");
+        // A refusal about how this binary was built has no line of the
+        // user's program to point at, so it travels as a source-less
+        // diagnostic — through the same reporter, and into the same
+        // envelope, as every other one.
+        let unsupported: Diag = (
+            "--static requires a Linux compiler built with the static-musl feature".to_string(),
+            NO_FILE,
+            0,
+            0,
+        );
+        return report_diagnostics(json_out, &[unsupported], &[], &files);
     }
     let target = codegen::BuildTarget {
         out: &out,
@@ -799,13 +856,65 @@ fn main() -> ExitCode {
         platform: &args.target,
     };
     if let Err(codegen_err) = compile_and_link(&names, &mut nodes, &mut lists, impls_list, &target, entry_span) {
-        return finish_with_codegen_error(&codegen_err, &files);
+        return report_codegen_error(json_out, &codegen_err, &files);
     }
     if args.run {
         return run_binary(&out);
     }
-    println!("Successfully compiled {} to '{}'.", entry, out.display());
+    report_accepted(json_out, &format!("Successfully compiled {} to '{}'.", entry, out.display()))
+}
+
+/// Report a run that produced no diagnostics.
+///
+/// A `--emit-json` invocation writes exactly one document whether or not
+/// the program was accepted, so a clean run is an empty diagnostic list
+/// rather than a status line a consumer would have to recognize as "not an
+/// error". A terminal gets the sentence it has always been given.
+fn report_accepted(emit_json: bool, message: &str) -> ExitCode {
+    if emit_json {
+        return emit_report(&cinnabar::emit_json::diagnostics_report(&[], &[], &[]));
+    }
+    println!("{}", message);
     ExitCode::SUCCESS
+}
+
+/// End the run with diagnostics, in whichever rendering was asked for.
+fn report_diagnostics(emit_json: bool, errors: &[Diag], notes: &[Note], files: &[(String, String)]) -> ExitCode {
+    if emit_json {
+        return finish_with_diagnostics_json(errors, notes, files);
+    }
+    finish_with_diagnostics(errors, notes, files)
+}
+
+/// End the run with a codegen failure, in whichever rendering was asked
+/// for. It enters the structured envelope as the diagnostic it is, so a
+/// consumer needs no second shape for failures below the front end.
+fn report_codegen_error(emit_json: bool, codegen_err: &codegen::error::CodegenError, files: &[(String, String)]) -> ExitCode {
+    if emit_json {
+        let diag: Diag = (
+            codegen_error_message(codegen_err),
+            codegen_err.span.0,
+            codegen_err.span.1,
+            codegen_err.span.2,
+        );
+        return finish_with_diagnostics_json(&[diag], &[], files);
+    }
+    finish_with_codegen_error(codegen_err, files)
+}
+
+/// Write one JSON document to standard output.
+///
+/// A serialization failure is still a compiler failure and is reported
+/// through the same source-less reporter every other tool error uses,
+/// rather than leaving the consumer with empty output and a success status.
+fn emit_report(report: &Value) -> ExitCode {
+    match cinnabar::emit_json::render_report(report) {
+        Ok(rendered) => {
+            println!("{}", rendered);
+            ExitCode::SUCCESS
+        }
+        Err(message) => source_less_failure(&message),
+    }
 }
 
 fn format_file(path: &Path, check: bool) -> ExitCode {
@@ -1370,66 +1479,12 @@ fn finish_with_diagnostics(errors: &[Diag], notes: &[Note], files: &[(String, St
     ExitCode::FAILURE
 }
 
-fn source_json(files: &[(String, String)], file: i64, start: i64, end: i64) -> Value {
-    if file == NO_FILE {
-        return Value::Null;
-    }
-    match files.get(file as usize) {
-        Some(entry) => json!({
-            "file_id": file,
-            "path": entry.0,
-            "start": start,
-            "end": end
-        }),
-        None => json!({
-            "file_id": file,
-            "path": Value::Null,
-            "start": start,
-            "end": end
-        }),
-    }
-}
-
 fn finish_with_diagnostics_json(errors: &[Diag], notes: &[Note], files: &[(String, String)]) -> ExitCode {
-    let mut diagnostics: Vec<Value> = Vec::new();
-    let mut error_idx = 0usize;
-    while error_idx < errors.len() {
-        let error = match errors.get(error_idx) {
-            Some(value) => value,
-            None => break,
-        };
-        let mut explanations: Vec<Value> = Vec::new();
-        let mut note_idx = 0usize;
-        while note_idx < notes.len() {
-            match notes.get(note_idx) {
-                Some(note) => {
-                    if note.0 == error_idx as i64 {
-                        explanations.push(json!({
-                            "message": note.1,
-                            "source": source_json(files, note.2, note.3, note.4)
-                        }));
-                    }
-                }
-                None => break,
-            }
-            note_idx += 1;
-        }
-        diagnostics.push(json!({
-            "severity": "error",
-            "message": error.0,
-            "source": source_json(files, error.1, error.2, error.3),
-            "explanations": explanations
-        }));
-        error_idx += 1;
-    }
-    let report = json!({
-        "format": "cinnabar.borrow-explanations.v1",
-        "diagnostics": diagnostics
-    });
-    match serde_json::to_string_pretty(&report) {
+    let report = cinnabar::emit_json::diagnostics_report(errors, notes, files);
+    match cinnabar::emit_json::render_report(&report) {
         Ok(rendered) => println!("{}", rendered),
-        Err(render_err) => {
-            if render_source_less(&format!("failed to serialize borrow explanations: {}", render_err)).is_err() {
+        Err(message) => {
+            if render_source_less(&message).is_err() {
                 return ExitCode::FAILURE;
             }
         }

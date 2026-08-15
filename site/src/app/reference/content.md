@@ -69,6 +69,16 @@ Attach secondary labels to borrow and linearity errors: which paths consume a
 value, where it was bound and its linear type, where it was previously moved.
 =json emits them as structured diagnostics instead
 
+### --emit-json
+
+Write the invocation's result to standard output as exactly one JSON document
+instead of terminal text: cinnabar.ast.v1 under --dump-ast, cinnabar.typed-ast.v1
+under --dump-typed-ast, cinnabar.layout.v1 under --print-layout, and otherwise
+cinnabar.diagnostics.v1, which is empty when the program was accepted. A fact
+with no Cinnabar source origin reports a null source rather than a fabricated
+location. Cannot be combined with --run, which gives the program's own output the
+same stream
+
 ### --run
 
 Execute the produced binary after a successful build. cinnabar then exits 0 if

@@ -303,9 +303,12 @@ fn borrow_explanations_have_a_stable_json_surface() -> Result<(), Box<dyn Error>
         .output()?;
     assert!(!output.status.success(), "borrow-invalid input unexpectedly succeeded");
     let report: Value = serde_json::from_slice(&output.stdout)?;
+    // The envelope is the compiler's one structured diagnostic surface, not
+    // a borrow-specific one: `--explain-borrow=json` is the older spelling
+    // of the request `--emit-json` makes for every stage.
     assert_eq!(
         report.get("format").and_then(Value::as_str),
-        Some("cinnabar.borrow-explanations.v1")
+        Some("cinnabar.diagnostics.v1")
     );
     let diagnostics = report
         .get("diagnostics")
