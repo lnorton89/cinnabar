@@ -1,25 +1,24 @@
-//! The local snapshot review server behind `cinnabar snapshots`.
+//! The loopback HTTP server and page behind `cinnabar snapshots`.
 //!
-//! A diagnostic is part of what the compiler promises, so `cinnabar test`
-//! compares one in full rather than searching it for a substring, and a
-//! reworded message fails until somebody has read the difference and said
-//! yes. `--update-snapshots` says yes to all of them at once, which is the
-//! wrong granularity for exactly the change that needs review: improving
-//! diagnostics rewrites many snapshots, most of them better and one of them
-//! by accident.
+//! Reads `project::snapshot_report`, which recompiles every rejection test
+//! and returns a `SnapshotEntry` per fixture holding the normalized sidecar
+//! contents and the normalized diagnostic the compiler emits now. Serves
+//! that as `cinnabar.snapshots.v1` on `GET /api/snapshots`, writes one
+//! sidecar through `project::accept_snapshot` on `POST /api/accept`, and
+//! serves the inlined review page on `GET /`.
 //!
-//! This serves the same comparison the test suite makes — `project`'s own
-//! discovery, compile, and normalization — as a page where each fixture is
-//! accepted or left alone on its own. Accepting writes the one sidecar,
-//! through the same confinement check every other sidecar write uses.
+//! The page computes a line-level longest-common-subsequence diff of the
+//! two strings in the browser and posts back the `actual` string it was
+//! given, so an accepted sidecar holds exactly the bytes
+//! `--update-snapshots` would have written.
 //!
 //! **Invariants:**
-//! - It binds a loopback address only. It writes files in the project on
-//!   request, which is a local tool's privilege and not a network
-//!   service's.
-//! - The comparison shown is `project::snapshot_report`'s, never a second
-//!   one computed here. A reviewer accepting a change has to be accepting
-//!   what the suite will check, or the review means nothing.
+//! - The bind address must be loopback; a non-loopback address is rejected
+//!   before the listener is created.
+//! - Request bodies above `MAX_BODY_BYTES` are rejected without being
+//!   buffered further.
+//! - Sidecar writes go through `project::accept_snapshot`, which applies
+//!   the same root-confinement check as every other sidecar write.
 
 use crate::project::{accept_snapshot, snapshot_report, ManifestError, ProjectManifest};
 use serde_json::{json, Value};
@@ -30,8 +29,8 @@ use std::path::Path;
 /// The document `GET /api/snapshots` answers with.
 pub const SNAPSHOTS_FORMAT: &str = "cinnabar.snapshots.v1";
 
-/// Largest request body accepted, in bytes. A snapshot is a diagnostic; a
-/// megabyte of one is a mistake or an attack, and neither deserves memory.
+/// Largest request body buffered, in bytes. Reading stops and the request
+/// is rejected once the accumulated body exceeds this.
 const MAX_BODY_BYTES: usize = 1024 * 1024;
 
 /// Build the report as a JSON document.

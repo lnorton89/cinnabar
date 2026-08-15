@@ -138,9 +138,8 @@ fn a_descriptor_row_reports_no_source_because_it_has_none() -> Result<(), Box<dy
         .filter(|node| node.get("tag").and_then(Value::as_str) == Some("TYINFO"))
         .collect();
     assert!(!descriptors.is_empty(), "the reference fixture produced no type descriptors");
-    // A descriptor row spends its leading slots on linearity flags rather
-    // than on a span. Rendering those as a location would hand a consumer
-    // a file id that is really a boolean.
+    // TYINFO rows hold linearity flags in the file and start slots, so
+    // `source` must be null on every one of them.
     for descriptor in &descriptors {
         assert_eq!(descriptor.get("source"), Some(&Value::Null), "descriptor row claimed a source: {}", descriptor);
         let detail = descriptor.get("detail").ok_or("descriptor row had no detail")?;
@@ -217,9 +216,8 @@ fn a_rejected_program_emits_the_diagnostic_envelope() -> Result<(), Box<dyn Erro
     let first = diagnostics.first().ok_or("diagnostics array was empty")?;
     assert_eq!(first.get("severity").and_then(Value::as_str), Some("error"));
 
-    // The span has to select the text the message is about, not merely be
-    // present: byte offsets that parse but point elsewhere are exactly what
-    // a consumer cannot check for itself.
+    // Slice the source with the reported offsets and require the message
+    // to contain what they select.
     let span = first.get("source").ok_or("diagnostic carried no source")?;
     let start = span.get("start").and_then(Value::as_i64).ok_or("source had no start")? as usize;
     let end = span.get("end").and_then(Value::as_i64).ok_or("source had no end")? as usize;
@@ -308,9 +306,8 @@ fn an_accepted_program_still_emits_exactly_one_document() -> Result<(), Box<dyn 
 
 #[test]
 fn json_and_human_renderings_report_the_same_verdict() -> Result<(), Box<dyn Error>> {
-    // The flag changes how a run is reported, never whether it was
-    // accepted. A surface that could differ on that would be a second
-    // compiler behind one binary.
+    // The exit status must match between the two renderings for every
+    // fixture.
     let cases = [
         ("spec.cnb", true),
         ("unknown_var.cnb", false),

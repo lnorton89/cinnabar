@@ -68,9 +68,8 @@ const Editor = forwardRef(function Editor({ value, onChange, diagnostics }, ref)
     const markers = [];
     for (const diagnostic of diagnostics) {
       if (!diagnostic.source || typeof diagnostic.source.start_line !== "number") {
-        // A diagnostic with no source origin — an internal failure, a link
-        // error — has nowhere on the page to point. It is shown in the
-        // Diagnostics tab and not invented onto a line here.
+        // Diagnostics with a null source carry no line or column and are
+        // skipped here; the Diagnostics tab still lists them.
         continue;
       }
       markers.push({

@@ -7,19 +7,19 @@
 //! keys, linearity flags, variant tags, and field facts all appear as the
 //! stages left them.
 //!
-//! A row's annotation is extracted once, into `RowDetail`, and rendered
-//! twice: as the line-oriented text a terminal reads, and as the object a
-//! `--emit-json` consumer reads. Those are two spellings of one extraction,
-//! not two readings of the arena — a second walk that decided for itself
-//! what a row means could tell an editor something the terminal never said.
+//! `row_detail` reads one row's tag, opcode and payload slots and returns a
+//! `RowDetail`: a category, an opcode name, a `spanned` flag, and a list of
+//! named `DetailValue`s. `detail_text` formats that as the dump's `; `
+//! suffix; `detail_json` formats the same struct as an object. `arena_json`
+//! emits the interning table, the list arena and one object per row.
 //!
 //! **Invariants:**
 //! - It prints facts the pipeline attached and never re-derives one. The
 //!   dump's whole value is that it shows the compiler's actual state; a
 //!   field this file computed for display would make it a second opinion
 //!   rather than a window.
-//! - Both renderings consume the same `RowDetail`. Neither may read a slot
-//!   the other does not.
+//! - Both renderings consume the same `RowDetail`; neither reads an arena
+//!   slot directly.
 
 use crate::ast::*;
 use crate::emit_json::{files_json, source_json};

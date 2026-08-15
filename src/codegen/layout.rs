@@ -8,10 +8,10 @@
 //! substitution path) and enum variant tags are read from the typechecker's
 //! `NODE_VARFACT` rows.
 //!
-//! The measurement runs once, in `measure_all`, and the two renderings —
-//! the aligned text report and the `--emit-json` document — format its
-//! result. Measuring twice would be two chances to disagree about a size
-//! the binary has only one of.
+//! `measure_all` lowers each candidate key and returns a `Vec<TypeLayout>`
+//! plus the target triple. `render_layouts` formats that vector as aligned
+//! text; `layouts_json` formats the same vector as a document. Neither
+//! calls `llvm_type` itself.
 //!
 //! **Invariants:**
 //! - Nothing here re-derives a layout fact by parallel logic. A number this
@@ -186,8 +186,8 @@ fn layout_json(names: &[String], nodes: &[i64], lists: &[Vec<i64>], layout: &Typ
             }
             idx += 1;
         }
-        // A payload offset of NONE is a tag-only enum, which has no payload
-        // to place rather than a payload at offset -1.
+        // NONE marks an enum lowered to a tag alone; it serializes as null
+        // rather than as the sentinel -1.
         let payload_offset = if layout.payload_offset == NONE {
             Value::Null
         } else {

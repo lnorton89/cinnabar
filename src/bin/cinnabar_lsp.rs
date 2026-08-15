@@ -609,12 +609,9 @@ fn on_code_lens(state: &ServerState, params: &Value) -> Value {
         match analysis.notes.get(idx) {
             Some(note) => {
                 if note.2 == file {
-                    // The lens carries the whole explanation its note belongs
-                    // to, not just its own sentence: an editor that wants to
-                    // draw a value's path through the function needs the
-                    // binding, the consuming branches and the live ones
-                    // together, and asking for them again would be a second
-                    // round trip for facts this analysis already holds.
+                    // Each lens carries the full explanation group for its
+                    // diagnostic, not only its own note, so a client renders
+                    // the binding, consuming and live spans from one payload.
                     lenses.push(json!({
                         "range": range_json(analysis, note.2, note.3, note.4),
                         "command": {

@@ -2,9 +2,10 @@
 //!
 //! `render_api_docs` walks the parsed item lists and emits one article per
 //! public declaration, taking the prose from the `NODE_DOC` rows the parser
-//! attached to each item. `docs_json` walks the same lists and reports the
-//! same declarations as structured data, for a documentation site that
-//! would rather lay the page out itself than inherit the one below. `render_cinnabook` folds that output together
+//! attached to each item. `docs_json` walks the same item lists, applies
+//! the same `node_b == 1` visibility test, and emits one object per
+//! declaration with its kind, name, `attached_docs` paragraphs, members and
+//! span. `render_cinnabook` folds that output together
 //! with the manifesto into a single version-pinned page, and
 //! `serve_cinnabook` serves a rendered page over HTTP.
 //!
@@ -357,9 +358,9 @@ fn render_methods(names: &[String], nodes: &[i64], lists: &[Vec<i64>], methods: 
 
 /// The prose the parser attached to `target`, paragraph by paragraph.
 ///
-/// One extraction, two renderings: the HTML page below and the JSON
-/// document both format this. Re-walking the doc rows separately for each
-/// would be two chances to disagree about what a declaration documents.
+/// Scans `NODE_DOC` rows for ones whose slot `a` equals `target` and
+/// returns each non-empty interned paragraph. Both `render_attached_docs`
+/// and `declaration_json` format this vector.
 fn attached_docs(names: &[String], nodes: &[i64], lists: &[Vec<i64>], target: i64) -> Vec<String> {
     let mut paragraphs: Vec<String> = Vec::new();
     let mut node = 0i64;

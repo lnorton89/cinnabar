@@ -13,12 +13,12 @@
 //! exercises, fuzz replay and minimization, the formatter, and the
 //! inspection flags all dispatch from this file into the library.
 //!
-//! `--emit-json` selects the machine-readable rendering of whatever the
-//! invocation produced, which `emit_json` and the files that own those
-//! facts define. This file decides only which rendering a run gets, so a
-//! consumer parses exactly one document per run — a diagnostic envelope
-//! with an empty list where a terminal would have been told the program
-//! compiled.
+//! `--emit-json` routes each exit through `emit_report` instead of the
+//! ariadne reporter: the arena document under `--dump-ast` and
+//! `--dump-typed-ast`, the layout document under `--print-layout`, and
+//! otherwise the diagnostic envelope, whose list is empty on a run that
+//! produced no diagnostics. Exactly one document reaches stdout per
+//! invocation.
 //!
 //! **Invariants:**
 //! - This is the only place a typed error may become a string. Every stage
@@ -921,10 +921,9 @@ fn main() -> ExitCode {
 
 /// Report a run that produced no diagnostics.
 ///
-/// A `--emit-json` invocation writes exactly one document whether or not
-/// the program was accepted, so a clean run is an empty diagnostic list
-/// rather than a status line a consumer would have to recognize as "not an
-/// error". A terminal gets the sentence it has always been given.
+/// Under `--emit-json` this writes the diagnostic envelope with an empty
+/// list, keeping one document per invocation. Otherwise it prints
+/// `message` and returns success.
 fn report_accepted(emit_json: bool, message: &str) -> ExitCode {
     if emit_json {
         return emit_report(&cinnabar::emit_json::diagnostics_report(&[], &[], &[]));

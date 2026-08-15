@@ -632,9 +632,8 @@ pub struct SnapshotEntry {
     pub test: String,
     /// The `.stderr` sidecar, relative to the project root.
     pub snapshot: String,
-    /// Whether a sidecar exists yet. A rejection test without one is
-    /// pinned by nothing, which is a state worth seeing rather than
-    /// silently treating as agreement.
+    /// Whether the sidecar file exists. False leaves `expected` empty and
+    /// `agrees` false.
     pub recorded: bool,
     /// The sidecar's contents, normalized, or empty when there is none.
     pub expected: String,
@@ -891,12 +890,9 @@ fn status_matches(status: ExitStatus, expected: i32, test: &Path) -> Result<(), 
 
 /// A diagnostic reduced to what it says.
 ///
-/// Line endings are normalized so a snapshot recorded on one platform
-/// still matches on another, and ANSI colour sequences are removed: the
-/// reporter colours its output whether or not a terminal is attached, and
-/// a sidecar that recorded those escapes would be pinning how a diagnostic
-/// looked rather than what it said — and would render as line noise in
-/// every review of it.
+/// Converts CRLF to LF and strips CSI escape sequences (ESC `[` through a
+/// final byte in 0x40..=0x7E), which the reporter emits whether or not a
+/// terminal is attached. Bytes following an ESC that is not `[` are kept.
 fn normalize_text(text: &str) -> String {
     let unified = text.replace("\r\n", "\n");
     let mut out = String::with_capacity(unified.len());

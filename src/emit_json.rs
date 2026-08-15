@@ -1,28 +1,25 @@
-//! The machine-readable renderings behind `--emit-json`.
+//! JSON document construction for the `--emit-json` output surfaces.
 //!
-//! Every introspection surface the compiler has was written for a terminal:
-//! the arena dumps indent, the layout report aligns columns, and diagnostics
-//! go through ariadne. A tool that wants those facts — an editor, a
-//! playground, a snapshot reviewer — should not have to scrape that text
-//! back into structure, so this file owns the second rendering of the same
-//! facts and nothing else. It defines the version tag of each document, the
-//! shape of a source span, and the diagnostic envelope; the arena rows come
-//! from `inspect`, and the layout numbers from `codegen::layout`, because
-//! those are the files that already own those facts.
+//! Owns the format version constants, the `source` span object, and the
+//! diagnostic envelope built from `Diag`/`Note` rows. Reads `errors` and
+//! `notes` slices produced by the pipeline stages and the `files` table
+//! from the module loader; emits `serde_json::Value` trees. Arena rows are
+//! serialized by `inspect`, layout measurements by `codegen::layout`, and
+//! documentation items by `docs`; each calls back into `source_json` and
+//! `files_json` here.
 //!
-//! A span here carries both the byte offsets the compiler works in and the
-//! line/UTF-16-column pair a protocol wants, mapped through the same
-//! `analysis::offset_to_position` the language server uses, so an editor and
-//! a `--emit-json` consumer cannot disagree about where a diagnostic points.
+//! A span object carries the byte offsets stored on the arena row and the
+//! zero-based line and UTF-16 column pair produced by
+//! `analysis::offset_to_position`, the same function the language server
+//! calls to build protocol positions.
 //!
 //! **Invariants:**
-//! - Nothing is computed here. A number or name in one of these documents
-//!   was established by an earlier stage and is being re-rendered; a fact
-//!   this file derived would be a second opinion the human rendering never
-//!   agreed to.
-//! - `NO_FILE` renders as a null source, never as a location. A fact with no
-//!   Cinnabar origin has no line to offer, and a JSON consumer is exactly
-//!   the reader most likely to believe a fabricated one.
+//! - No value in an emitted document is computed here. Every number and
+//!   name is copied from a `Diag`, a `Note`, or an arena row an earlier
+//!   stage wrote.
+//! - A span whose file id equals `NO_FILE` serializes to JSON null. A span
+//!   naming a file id absent from `files` serializes its offsets with a
+//!   null `path`.
 
 use crate::analysis::offset_to_position;
 use crate::ast::{note_kind_name, Diag, Note, NO_FILE};
@@ -48,10 +45,8 @@ pub const DIAGNOSTICS_FORMAT: &str = "cinnabar.diagnostics.v1";
 
 /// Render one span as the source object every document shares.
 ///
-/// A span whose file is `NO_FILE` has no source origin at all and renders
-/// as null. A span naming a file that is not in the loaded set keeps its
-/// offsets and reports a null path, since offsets into a file nobody can
-/// read are still true and a made-up path would not be.
+/// A span whose file id is `NO_FILE` returns JSON null. A file id outside
+/// the `files` table returns the offsets with a null `path`.
 pub fn source_json(files: &[(String, String)], file: i64, start: i64, end: i64) -> Value {
     if file == NO_FILE {
         return Value::Null;
