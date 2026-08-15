@@ -1,0 +1,13 @@
+{
+  "name": "cinnabar-playground-server",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Compile-and-run API for the hosted Cinnabar playground.",
+  "license": "Apache-2.0 WITH LLVM-exception",
+  "type": "module",
+  "main": "src/main.js",
+  "scripts": {
+    "start": "node src/main.js",
+    "test": "node --test"
+  }
+}

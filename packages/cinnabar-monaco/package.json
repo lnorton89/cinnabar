@@ -4,8 +4,16 @@
   "description": "Cinnabar language support for the Monaco editor: a Monarch tokenizer and language configuration.",
   "license": "Apache-2.0 WITH LLVM-exception",
   "main": "src/index.js",
-  "files": ["src", "README.md"],
-  "keywords": ["monaco", "monaco-editor", "cinnabar", "syntax-highlighting"],
+  "files": [
+    "src",
+    "README.md"
+  ],
+  "keywords": [
+    "monaco",
+    "monaco-editor",
+    "cinnabar",
+    "syntax-highlighting"
+  ],
   "scripts": {
     "test": "node --test"
   },
@@ -13,6 +21,13 @@
     "monaco-editor": ">=0.40.0"
   },
   "peerDependenciesMeta": {
-    "monaco-editor": { "optional": true }
+    "monaco-editor": {
+      "optional": true
+    }
+  },
+  "type": "module",
+  "exports": {
+    ".": "./src/index.js",
+    "./language": "./src/language.js"
   }
 }

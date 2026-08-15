@@ -1,17 +1,17 @@
-const test = require("node:test");
-const assert = require("node:assert");
-const fs = require("node:fs");
-const path = require("node:path");
-const {
+import test from "node:test";
+import assert from "node:assert";
+import fs from "node:fs";
+import path from "node:path";
+import {
   KEYWORDS,
   CONTROL_KEYWORDS,
   MODIFIER_KEYWORDS,
   BUILTIN_TYPES,
   classifyIdentifier
-} = require("../src/language");
-const { monarchLanguage, languageConfiguration, registerCinnabar, LANGUAGE_ID } = require("../src");
+} from "../src/language.js";
+import { monarchLanguage, languageConfiguration, registerCinnabar, LANGUAGE_ID } from "../src/index.js";
 
-const repoRoot = path.resolve(__dirname, "..", "..", "..");
+const repoRoot = path.resolve(import.meta.dirname, "..", "..", "..");
 
 // The compiler's own keyword table, read out of the source rather than
 // copied. A keyword added to or removed from the language has to fail here,

@@ -1,0 +1,23 @@
+{
+  "name": "cinnabar-playground-web",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Front end for the hosted Cinnabar playground.",
+  "license": "Apache-2.0 WITH LLVM-exception",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "cinnabar-monaco": "file:../../packages/cinnabar-monaco",
+    "monaco-editor": "^0.54.0",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^5.1.0",
+    "vite": "^7.2.0"
+  }
+}

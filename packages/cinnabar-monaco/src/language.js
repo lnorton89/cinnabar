@@ -14,7 +14,7 @@
  * Kept in the compiler's order so a diff against `src/analysis.rs` reads as
  * a diff rather than a reordering.
  */
-const KEYWORDS = [
+export const KEYWORDS = [
   "fun",
   "val",
   "var",
@@ -47,7 +47,7 @@ const KEYWORDS = [
  * from declaration keywords. A subset of `KEYWORDS`, never a second list —
  * `test/drift.test.js` checks that every member is one.
  */
-const CONTROL_KEYWORDS = [
+export const CONTROL_KEYWORDS = [
   "if",
   "elif",
   "else",
@@ -61,7 +61,7 @@ const CONTROL_KEYWORDS = [
 ];
 
 /** Keywords that modify a declaration rather than introduce one. */
-const MODIFIER_KEYWORDS = ["pub", "impure", "nat", "mut"];
+export const MODIFIER_KEYWORDS = ["pub", "impure", "nat", "mut"];
 
 /**
  * The built-in type grid.
@@ -71,7 +71,7 @@ const MODIFIER_KEYWORDS = ["pub", "impure", "nat", "mut"];
  * separately from `KEYWORDS` and why a user type named the same way would
  * shadow rather than collide.
  */
-const BUILTIN_TYPES = [
+export const BUILTIN_TYPES = [
   "Unit",
   "Bool",
   "I8",
@@ -92,7 +92,7 @@ const BUILTIN_TYPES = [
 ];
 
 /** The variant constructors every program has without importing them. */
-const BUILTIN_CONSTRUCTORS = ["Ok", "Err", "Some", "None"];
+export const BUILTIN_CONSTRUCTORS = ["Ok", "Err", "Some", "None"];
 
 /**
  * The three identifier shapes, as anchored patterns.
@@ -103,14 +103,14 @@ const BUILTIN_CONSTRUCTORS = ["Ok", "Err", "Some", "None"];
  * identifier by its shape alone, with no symbol table — which is what makes
  * highlighting here semantic rather than a guess.
  */
-const IDENTIFIER_PATTERNS = {
+export const IDENTIFIER_PATTERNS = {
   binding: /^[a-z][a-z0-9_]*$/,
   type: /^[A-Z][A-Za-z0-9]*$/,
   constant: /^[A-Z][A-Z0-9_]+$/
 };
 
 /** Which of the three shapes `text` has, or "unknown" if it has none. */
-function classifyIdentifier(text) {
+export function classifyIdentifier(text) {
   if (IDENTIFIER_PATTERNS.constant.test(text)) {
     return "constant";
   }
@@ -122,13 +122,3 @@ function classifyIdentifier(text) {
   }
   return "unknown";
 }
-
-module.exports = {
-  KEYWORDS,
-  CONTROL_KEYWORDS,
-  MODIFIER_KEYWORDS,
-  BUILTIN_TYPES,
-  BUILTIN_CONSTRUCTORS,
-  IDENTIFIER_PATTERNS,
-  classifyIdentifier
-};

@@ -11,19 +11,19 @@
 // What it cannot know is anything the typechecker computes — whether a
 // handle is linear, what a name resolved to. Nothing below claims to.
 
-const {
+import {
   KEYWORDS,
   CONTROL_KEYWORDS,
   MODIFIER_KEYWORDS,
   BUILTIN_TYPES,
   BUILTIN_CONSTRUCTORS
-} = require("./language");
+} from "./language.js";
 
 /** The language id to register Cinnabar under. */
-const LANGUAGE_ID = "cinnabar";
+export const LANGUAGE_ID = "cinnabar";
 
 /** What `monaco.languages.register` needs to associate `.cnb` with it. */
-const languageExtensionPoint = {
+export const languageExtensionPoint = {
   id: LANGUAGE_ID,
   extensions: [".cnb"],
   aliases: ["Cinnabar", "cinnabar"],
@@ -37,7 +37,7 @@ const languageExtensionPoint = {
  * rules key on the keywords that open and close one. `elif` and `else`
  * outdent to match the `if` they belong to.
  */
-const languageConfiguration = {
+export const languageConfiguration = {
   comments: {
     lineComment: "#",
     blockComment: ["#|", "|#"]
@@ -82,7 +82,7 @@ const languageConfiguration = {
  * win: SCREAMING_SNAKE_CASE before PascalCase, because `MAX_PORT` is a
  * constant and not a type.
  */
-const monarchLanguage = {
+export const monarchLanguage = {
   defaultToken: "",
   tokenPostfix: ".cnb",
   keywords: KEYWORDS,
@@ -173,17 +173,9 @@ const monarchLanguage = {
  * Takes the instance rather than importing it, so this package never
  * bundles a second copy of Monaco into a page that already has one.
  */
-function registerCinnabar(monaco) {
+export function registerCinnabar(monaco) {
   monaco.languages.register(languageExtensionPoint);
   monaco.languages.setLanguageConfiguration(LANGUAGE_ID, languageConfiguration);
   monaco.languages.setMonarchTokensProvider(LANGUAGE_ID, monarchLanguage);
   return LANGUAGE_ID;
 }
-
-module.exports = {
-  LANGUAGE_ID,
-  languageExtensionPoint,
-  languageConfiguration,
-  monarchLanguage,
-  registerCinnabar
-};
